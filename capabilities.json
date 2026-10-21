@@ -1,0 +1,27 @@
+{
+  "profile": "helios-native-0.1",
+  "resident_posix_version": 1001,
+  "application_thread_only": true,
+  "fork": false,
+  "posix_spawn": false,
+  "hu_spawn": true,
+  "spawn_concurrent_close": false,
+  "cross_task_shared_offsets_and_status": false,
+  "getaddrinfo_ipv4": true,
+  "getaddrinfo_ipv6": false,
+  "poll": false,
+  "hu_poll_streams": [
+    "internet-socket",
+    "native-fifo",
+    "regular-file"
+  ],
+  "hu_channel_backend": "Helios /fifo native messages, bounded 16 KiB",
+  "posix_pipe_atomicity": false,
+  "async_resolver_wire": "HUR1",
+  "tls_client": "hu_tls opaque client object and byte transport/provider API v1",
+  "general_terminfo": false,
+  "newlib_backend": false,
+  "tls_default_backend": "host-offload; requires optional /internet HTL1",
+  "tls_native_crypto": false,
+  "tls_legacy_fd_adapter": true
+}

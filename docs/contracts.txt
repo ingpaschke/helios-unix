@@ -1,0 +1,192 @@
+Helios Unix compatibility profile 0.1
+
+The native archive uses the Helios 1.31-SP1 Clib, Posix and descriptor space.
+Resident changes are authoritative in hng-sp1/posix, not injected by the
+distribution build. hng-sp1/include/hu-spawn.h owns the shared spawn ABI.
+The shared DNS implementation is hng-sp1/posix/dns-resolver.h.
+It does not mix standalone newlib FILEs, allocation or host-protocol syscalls
+with Helios. Public calls run on the application thread. General concurrent
+libc access, pthreads, fork, shared memory and full POSIX conformance are not
+provided. Native Fork is a local shared-memory thread; hu_spawn is a new task.
+
+Build and install
+  python3 ktm-distribution/build_posix.py
+  python3 ktm-distribution/build_compat.py
+  python3 ktm-distribution/build_irssi.py
+
+The build stages headers below include/helios-unix, helios-unix.lib and the
+hu-resolve executable in lib. helios-unix-flags.json gives include order and
+link requirements. Link the archive before bsd.lib, c.lib and helios.lib.
+The SDK overlay rejects fork() and vfork(). HU_ENABLE_NATIVE_VFORK explicitly
+opts into the native vfork escape hatch. Native headers remain intact.
+Use the same header profile for every dependency. There is no include_next.
+
+Runtime dependency: patched Posix version 1001 and the matching Linux io-server.
+Old export indices are unchanged; hu_spawn_native is appended. The private
+Pstream layout changes and therefore every resident object must be rebuilt.
+The archive carries the new import definition. Restart Helios after replacing
+Posix; replacing a disk copy cannot update the already loaded resident module.
+
+Descriptor profile
+  dup/dup2 share status within one task; CLOEXEC belongs to each descriptor.
+  F_SETFL and the old BSD FIONBIO ioctl update /internet before committing
+  local status. Failed server requests leave the local flags unchanged.
+  Application Stream flag 0x00100000 carries initial O_NONBLOCK across SendEnv.
+  Different tasks retain independent file positions and cached status: later
+  status changes in a child are not coherent with the parent's cached flags.
+  No Unix shared open-file-description claim across tasks is made.
+  shutdown retains the descriptor and supports read, write and both directions.
+  mkstemp relies on atomic O_CREAT|O_EXCL in the matching Linux drive server.
+  Unix permission modes retain Helios's native matrix semantics.
+
+Event waiting
+  hu_poll supports /internet sockets, native channel FIFOs and regular files, including fd >= 64.
+  It reports ERR/HUP/NVAL independently of the requested mask. Negative fds
+  are ignored; duplicate entries count separately. Unsupported stream classes
+  return EOPNOTSUPP. It checks readiness without consuming data, then waits
+  through native SelectStream notifications. This is not exported as poll;
+  terminals and native pipes have not qualified for the full poll contract.
+
+Resolver
+  getaddrinfo/freeaddrinfo/getnameinfo/gai_strerror provide owned IPv4 results,
+  numeric/service lookup, passive addresses and canonical/reverse names.
+  /helios/etc/hosts precedes DNS. Up to 32 distinct A records are returned.
+  IPv6 and unsupported flags fail explicitly. Legacy netdb macros remain ABI
+  compatible and return one address. The shared DNS core supports compression,
+  CNAME, search domains and TCP fallback. A resolver socket at or above the
+  native FD_SETSIZE limit fails safely rather than overflowing fd_set.
+  Service lookups use the legacy database and require application-thread use.
+
+Spawn
+  hu_spawn/hu_spawnp return zero or an errno value. Use native waitpid/kill.
+  Attributes select session-TFM, local or named-processor placement, child cwd,
+  and optional closefrom applied after file actions. Zero-initialize attributes.
+  At most 32 ordered close/dup2/open actions; descriptor indices below 4096.
+  File actions affect the child description, never the parent's fd table/cwd.
+  UID/GID, signal mask and ignored signals inherit through native environment
+  metadata. New tasks receive argv/env values and stream capabilities.
+  No concurrent spawn/close guarantee. No posix_spawn symbol or scheduling API.
+  Opening a redirection can create/truncate its file before a later launch error.
+  Arbitrary unconnected native pipes cannot be inherited safely: their native
+  CopyStream can wait for endpoint rendezvous. Use hu_channel for helpers.
+
+Channels and asynchronous lookup
+  hu_channel returns [reader,writer], a native Helios FIFO byte stream with
+  a 16 KiB capacity. /fifo supplies buffering and endpoint reference counts;
+  /internet and the host TCP stack are not used. Its absolute processor path
+  survives spawn to another processor. GetEnv opens the child's own reference
+  before acknowledging SendEnv, so closing the parent's fd is safe.
+  One producer and one consumer; no PIPE_BUF/atomic-write guarantee.
+  EOF, bounded nonblocking writes and readiness are tested without /internet.
+  The distribution starts /fifo before desktop applications. An old FIFO server
+  without the readiness extension is rejected by hu_poll with EIO.
+  hu_poll uses native SelectStream subscriptions and checks readiness on wake;
+  it no longer sends one host RPC per fd every 10 ms. Empty FIFOs wake on EOF.
+  The historical anonymous-pipe implementation remains separate: its same-task
+  port-free bug is fixed, but its endpoint migration is not used by hu_channel.
+
+  hu_resolve_launch starts /helios/lib/hu-resolve with the supplied channel writer
+  as stdout; descriptors >=3 are closed in the child after its file actions.
+  Standard input/error are closed in the helper. Caller closes its writer, then waits for reader readiness. hu_resolve_receive
+  reads one HUR1 frame, with a two-second bound for a fragmented reply. Frame:
+  4-byte magic, one-byte EAI error, one-byte count, 2 zero reserved bytes,
+  32 four-byte IPv4 addresses, 256-byte NUL-terminated canonical name (392 bytes).
+  No pointers, native word layout, variable allocation lengths or shared errno.
+  Caller closes reader and reaps PID; cancellation closes channels and kills/
+  reaps the helper. Irssi uses its existing pidwait loop. DNS timeouts run in
+  the helper; receipt of a stalled partial reply can pause UI for two seconds.
+
+Terminal and utilities
+  hu_terminal_size/raw/restore use native termios and its saved full state.
+  SIGWINCH/foreground ownership remains the existing xterm/native tty contract.
+  hu_terminal_decoder explicitly enables C1 CSI/SS3 conversion only for terminal
+  input and preserves fragmented UTF-8 continuation bytes. It never hooks read.
+  The optional setupterm/tiget*/tputs component contains Irssi's small ANSI/xterm
+  capability table, not a terminfo database or curses implementation. Its absent
+  capability returns follow this consumer's conventions; do not advertise a
+  general system terminfo implementation to arbitrary configure scripts.
+  glob supports *, ?, bracket/range patterns, escapes, dotfile rules, ERR/MARK/
+  NOSORT/DOOFFS/NOCHECK/APPEND/NOESCAPE and current-user TILDE. Limits: 1023-byte
+  paths, 128 levels, 65536 results/offset; bytewise sorting, no ~otheruser or locale
+  collation. globfree owns all allocated results. mkstemp requires trailing XXXXXX.
+
+Provenance
+  New adapters and tests were written in this project; no newlib source was
+  imported. DNS and the small terminal table were factored from the KTM port.
+  Resident patches derive from the GPL Helios-NG/SP1 sources (hng-sp1/LICENSE).
+  Irssi/GLib sources retain their included upstream licenses. Build metadata
+  hashes sources, compiler, assembler, SDK, runtime and every staged artifact.
+  The optional newlib-on-Helios experiment remains a separate future backend.
+
+Portable TLS connections
+  Include helios/unix/tls.h and link helios-unix.lib. hu_tls_create chooses a
+  backend and copies the authenticated peer name; hu_tls_attach transfers a
+  connected byte transport on success. A transport need not be /internet or
+  TCP: read/write, a select-compatible wait fd and close are sufficient for a
+  native TLS engine. hu_tls_attach_fd is the connected-socket convenience transport
+  for opaque objects; it does not create a legacy fd adapter entry. Connection
+  establishment/DNS remain the caller's job.
+  Backend selection precedes TLS negotiation; it does not depend on a socket
+  upgrade succeeding. There is no fallback to plaintext or a different backend.
+
+  hu_tls_handshake returns 1 only after authenticated success, 0 while pending,
+  -1 on failure. hu_tls_handshake_wait provides a bounded synchronous helper.
+  Read/write go through the TLS object, never directly through its transport.
+  A short write consumes only its returned length. Retry the unconsumed suffix;
+  after EAGAIN preserve the buffer until retry completes. Read returns 0 for
+  authenticated EOF; failures are sticky. No application I/O before READY.
+  hu_tls_interest describes the physical fd, READ/WRITE interests and timer for
+  each operation. Reads may require WRITE and writes may require READ.
+  hu_tls_pending counts already-decrypted bytes, allowing immediate dispatch
+  without socket readability. hu_tls_wait handles interests and provider timers.
+  Handshake deadlines include time spent between event-loop calls. gettimeofday
+  is the available clock; backwards changes clamp elapsed time to zero.
+  hu_tls_shutdown is an incremental close_notify operation, permitting reads
+  afterwards. hu_tls_destroy cancels and closes the owned transport exactly once.
+  Objects are single-owner/event-loop objects, not thread-safe shared objects.
+
+  tls_backend.h defines version 1 of the provider and byte transport contracts.
+  Provider configuration is opaque and can carry entropy, trust-store, clock,
+  allocator and policy services needed by a native implementation. A provider
+  must reject absent services rather than silently omit peer authentication.
+  HU_TLS_DEFAULT_BACKEND selects the default provider symbol when building
+  tls.c. The current default is host-offload. The provider/transport boundary and test
+  backend are implemented; a production Transputer cryptographic engine is not.
+  The offload provider rejects non-NULL custom configuration (unsupported).
+
+  tls_fd.h adapts existing single-event-loop programs. hu_tls_fd_start creates
+  the default provider; hu_tls_fd_attach accepts an explicitly selected object.
+  The latter transfers both fd and object on success only. After attaching,
+  route ALL read/write/select/close through hu_tls_fd_* (plaintext descriptors
+  pass through). The fd is an application key, not an encrypted OS descriptor.
+  Do not use dup/fdopen/send/recv, change blocking flags, transfer the descriptor
+  to another task or bypass adapter close. Close removes the entry before fd
+  reuse. Close cancels a pending handshake; established sessions drive TLS
+  shutdown for at most five seconds before releasing the transport. Even on
+  error the fd is released, so never retry close. The opaque API also permits
+  asynchronous shutdown in event loops. The host backend drains accepted writes
+  asynchronously on close. Select maps logical application readiness to provider interests,
+  including cross-direction waits and buffered plaintext. It does not synthesize
+  an urgent-data channel. Irssi's GIOChannel, Links' socket loop and slrn use it.
+  Legacy hu_tls_start/status/connect/available and HU_SOL_TLS were removed from
+  the public API intentionally: rebuilding a port must expose unsafe raw I/O.
+
+Host offload backend (private /internet HTL1 transport extension)
+  Only tls_offload.c and the optional socket transport control know offloading.
+  A native provider can operate with control=NULL. No resident POSIX ABI change.
+  TLS is optional at io-server build time (IOS_TLS=1); old servers reject it.
+  OpenSSL in the Linux io-server verifies the CA chain and DNS name/IP, sends
+  SNI for DNS names, and requires TLS >=1.2. No insecure/downgrade mode, server
+  TLS, client certificates, application ALPN, or caller-supplied trust store.
+  Linux's system CA store is used; SSL_CERT_FILE/DIR can configure the host.
+  Close cancels negotiation or drains established output in the host worker;
+  shutdown(SHUT_WR) sends pending plaintext followed by close_notify.
+  Workers own duplicated network descriptors, bounded buffers and SSL objects;
+  they never call Helios coroutines. Per-socket threads consume host resources.
+  Wire: socket level 0xfff2. Get option 0: four-byte HTL1 capability.
+  Set option 1: 264 bytes: uint32LE version=1, timeout_ms=100..120000,
+  NUL-terminated peer[256]. Get option 2: 224 bytes: HTL1, uint32LE state,
+  error, reserved=0, protocol[16], cipher[64], diagnostic[128]. Strings are
+  NUL-terminated. States 1 negotiating, 2 ready, 3 failed, 4 closed. Errors:
+  1 I/O, 2 certificate/identity, 3 protocol, 4 timeout, 5 cancelled, 6 internal.
+  All framing is independent of host word size, pointers and byte order.
