@@ -1,31 +1,26 @@
 Helios Unix compatibility profile 0.1
 
-The native archive uses the Helios 1.31-SP1 Clib, Posix and descriptor space.
-Resident changes are authoritative in hng-sp1/posix, not injected by the
-distribution build. hng-sp1/include/hu-spawn.h owns the shared spawn ABI.
-The shared DNS implementation is hng-sp1/posix/dns-resolver.h.
+The native archive uses Helios Clib, Posix and the native descriptor space.
+The SDK's hu-spawn.h declares the resident task-launching ABI. Name lookup
+uses the DNS implementation from Helios-NG's posix/dns-resolver.h.
 It does not mix standalone newlib FILEs, allocation or host-protocol syscalls
 with Helios. Public calls run on the application thread. General concurrent
 libc access, pthreads, fork, shared memory and full POSIX conformance are not
 provided. Native Fork is a local shared-memory thread; hu_spawn is a new task.
 
 Build and install
-  python3 ktm-distribution/build_posix.py
-  python3 ktm-distribution/build_compat.py
-  python3 ktm-distribution/build_irssi.py
+  See ../README.md for prerequisites, build commands and header ordering.
+  The build stages headers below include/helios-unix, helios-unix.lib and the
+  hu-resolve executable in lib. helios-unix-flags.json gives include order and
+  link requirements. Link the archive before bsd.lib, c.lib and helios.lib.
+  The SDK overlay rejects fork() and vfork(). HU_ENABLE_NATIVE_VFORK explicitly
+  opts into the native vfork escape hatch. Use the same header profile for
+  every dependency.
 
-The build stages headers below include/helios-unix, helios-unix.lib and the
-hu-resolve executable in lib. helios-unix-flags.json gives include order and
-link requirements. Link the archive before bsd.lib, c.lib and helios.lib.
-The SDK overlay rejects fork() and vfork(). HU_ENABLE_NATIVE_VFORK explicitly
-opts into the native vfork escape hatch. Native headers remain intact.
-Use the same header profile for every dependency. There is no include_next.
-
-Runtime dependency: patched Posix version 1001 and the matching Linux io-server.
-Old export indices are unchanged; hu_spawn_native is appended. The private
-Pstream layout changes and therefore every resident object must be rebuilt.
-The archive carries the new import definition. Restart Helios after replacing
-Posix; replacing a disk copy cannot update the already loaded resident module.
+Runtime dependency: Posix version 1001 and matching resident libraries.
+Restart Helios after replacing resident modules; replacing a disk copy does
+not update a module already loaded. Host-offloaded TLS additionally requires
+an I/O server with the HTL1 extension.
 
 Descriptor profile
   dup/dup2 share status within one task; CLOEXEC belongs to each descriptor.
@@ -78,12 +73,10 @@ Channels and asynchronous lookup
   before acknowledging SendEnv, so closing the parent's fd is safe.
   One producer and one consumer; no PIPE_BUF/atomic-write guarantee.
   EOF, bounded nonblocking writes and readiness are tested without /internet.
-  The distribution starts /fifo before desktop applications. An old FIFO server
+  Start /fifo before applications that use channels. A FIFO server
   without the readiness extension is rejected by hu_poll with EIO.
-  hu_poll uses native SelectStream subscriptions and checks readiness on wake;
-  it no longer sends one host RPC per fd every 10 ms. Empty FIFOs wake on EOF.
-  The historical anonymous-pipe implementation remains separate: its same-task
-  port-free bug is fixed, but its endpoint migration is not used by hu_channel.
+  hu_poll uses native SelectStream subscriptions and checks readiness on wake.
+  Empty FIFOs wake on EOF.
 
   hu_resolve_launch starts /helios/lib/hu-resolve with the supplied channel writer
   as stdout; descriptors >=3 are closed in the child after its file actions.
@@ -93,7 +86,7 @@ Channels and asynchronous lookup
   32 four-byte IPv4 addresses, 256-byte NUL-terminated canonical name (392 bytes).
   No pointers, native word layout, variable allocation lengths or shared errno.
   Caller closes reader and reaps PID; cancellation closes channels and kills/
-  reaps the helper. Irssi uses its existing pidwait loop. DNS timeouts run in
+  reaps the helper. DNS timeouts run in
   the helper; receipt of a stalled partial reply can pause UI for two seconds.
 
 Terminal and utilities
@@ -109,14 +102,6 @@ Terminal and utilities
   NOSORT/DOOFFS/NOCHECK/APPEND/NOESCAPE and current-user TILDE. Limits: 1023-byte
   paths, 33 components, 65536 results/offset; bytewise sorting, no ~otheruser or locale
   collation. globfree owns all allocated results. mkstemp requires trailing XXXXXX.
-
-Provenance
-  New adapters and tests were written in this project; no newlib source was
-  imported. DNS and the small terminal table were factored from the KTM port.
-  Resident patches derive from the GPL Helios-NG/SP1 sources (hng-sp1/LICENSE).
-  Irssi/GLib sources retain their included upstream licenses. Build metadata
-  hashes sources, compiler, assembler, SDK, runtime and every staged artifact.
-  The optional newlib-on-Helios experiment remains a separate future backend.
 
 Portable TLS connections
   Include helios/unix/tls.h and link helios-unix.lib. hu_tls_create chooses a
@@ -151,7 +136,7 @@ Portable TLS connections
   must reject absent services rather than silently omit peer authentication.
   HU_TLS_DEFAULT_BACKEND selects the default provider symbol when building
   tls.c. The current default is host-offload. The provider/transport boundary and test
-  backend are implemented; a production Transputer cryptographic engine is not.
+  backend are implemented; no native Transputer cryptographic engine is included.
   The offload provider rejects non-NULL custom configuration (unsupported).
 
   tls_fd.h adapts existing single-event-loop programs. hu_tls_fd_start creates
@@ -170,9 +155,7 @@ Portable TLS connections
   asynchronous shutdown in event loops. The host backend drains accepted writes
   asynchronously on close. Select maps logical application readiness to provider interests,
   including cross-direction waits and buffered plaintext. It does not synthesize
-  an urgent-data channel. Irssi's GIOChannel, Links' socket loop and slrn use it.
-  Legacy hu_tls_start/status/connect/available and HU_SOL_TLS were removed from
-  the public API intentionally: rebuilding a port must expose unsafe raw I/O.
+  an urgent-data channel.
 
 Host offload backend (private /internet HTL1 transport extension)
   Only tls_offload.c and the optional socket transport control know offloading.
