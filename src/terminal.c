@@ -15,6 +15,9 @@ int hu_terminal_raw(int fd,struct termios *saved)
     struct termios t;
     if(!saved){errno=EINVAL;return -1;}
     if(tcgetattr(fd,saved)<0)return -1;
+    /* Helios tcsetattr copies c_cc[VMIN/VTIME] to c_min/c_time. The
+     * indices alias VEOF/VEOL in cooked mode; window servers regenerate
+     * rows/columns on GetAttributes, so these are not Unix read timers. */
     t=*saved;
     t.c_iflag &= ~(BRKINT|ICRNL|INLCR|IGNCR|IXON|IXOFF|ISTRIP);
     t.c_oflag &= ~OPOST;

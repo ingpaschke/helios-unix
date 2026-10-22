@@ -108,7 +108,7 @@ int hu_tls_info(struct hu_tls *t,struct hu_tls_info *info)
     info->state=t->state;
     if(t->failure && !info->message[0]) {
         strncpy(info->message,strerror(t->failure),sizeof(info->message)-1);
-        info->error=t->failure==ETIMEDOUT?4:1;
+        info->error=t->failure==ETIMEDOUT?4:t->failure==EACCES?2:1;
     }
     return 0;
 }

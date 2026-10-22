@@ -74,9 +74,11 @@ int hu_tls_fd_attach(int fd,struct hu_tls *tls)
 }
 int hu_tls_fd_start(int fd,const char *peer,unsigned timeout)
 {
-    struct hu_tls *t=hu_tls_create(NULL,NULL,peer,timeout);int saved;
-    if(!t)return -1;
-    if(hu_tls_fd_attach(fd,t)<0){saved=errno;hu_tls_destroy(t);errno=saved;return -1;}
+    struct hu_tls *t;int saved;
+    if(hu_tls_fd_get(fd)){errno=EALREADY;return -1;}
+    t=hu_tls_create(NULL,NULL,peer,timeout);
+    if(!t){saved=errno;close(fd);errno=saved;return -1;}
+    if(hu_tls_fd_attach(fd,t)<0){saved=errno;hu_tls_destroy(t);close(fd);errno=saved;return -1;}
     /* Even a failure stays registered until close: never fall through to
      * plaintext I/O after failed authentication or an unsupported provider. */
     return hu_tls_handshake(t)<0?-1:0;

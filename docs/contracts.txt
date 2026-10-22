@@ -107,7 +107,7 @@ Terminal and utilities
   general system terminfo implementation to arbitrary configure scripts.
   glob supports *, ?, bracket/range patterns, escapes, dotfile rules, ERR/MARK/
   NOSORT/DOOFFS/NOCHECK/APPEND/NOESCAPE and current-user TILDE. Limits: 1023-byte
-  paths, 128 levels, 65536 results/offset; bytewise sorting, no ~otheruser or locale
+  paths, 33 components, 65536 results/offset; bytewise sorting, no ~otheruser or locale
   collation. globfree owns all allocated results. mkstemp requires trailing XXXXXX.
 
 Provenance
@@ -155,7 +155,10 @@ Portable TLS connections
   The offload provider rejects non-NULL custom configuration (unsupported).
 
   tls_fd.h adapts existing single-event-loop programs. hu_tls_fd_start creates
-  the default provider; hu_tls_fd_attach accepts an explicitly selected object.
+  the default provider and owns fd on entry, including all setup failures.
+  EALREADY preserves the existing attachment. A failed handshake remains
+  registered until hu_tls_fd_close; it can never fall through to plaintext.
+  hu_tls_fd_attach accepts an explicitly selected object.
   The latter transfers both fd and object on success only. After attaching,
   route ALL read/write/select/close through hu_tls_fd_* (plaintext descriptors
   pass through). The fd is an application key, not an encrypted OS descriptor.

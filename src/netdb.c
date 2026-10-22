@@ -26,7 +26,10 @@ static int hu_hosts(const char *name,int reverse,unsigned char addr[32][4],int *
         do {if(!reverse&&ktm_dns_equal(name,word))match=1;}while((word=ktm_dns_token(&cursor))!=NULL);
         if(match) {
             if(!*count)strcpy(canonical,first);
-            if(*count<32)memcpy(addr[(*count)++],bytes,4);
+            { int i;
+              for(i=0;i<*count;i++)if(!memcmp(addr[i],bytes,4))break;
+              if(i==*count&&*count<32)memcpy(addr[(*count)++],bytes,4);
+            }
             if(reverse)break;
         }
     }

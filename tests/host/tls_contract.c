@@ -8,9 +8,14 @@
 #include <stdlib.h>
 #include <string.h>
 #include <errno.h>
+#include <fcntl.h>
 #include <assert.h>
 #include <stdio.h>
-static int closed,destroyed,controls;
+static int closed,destroyed,controls,fail_malloc,fail_calloc;
+void *__real_calloc(size_t,size_t);
+void *__wrap_calloc(size_t n,size_t s) {if(fail_calloc){fail_calloc=0;errno=ENOMEM;return NULL;}return __real_calloc(n,s);}
+void *__real_malloc(size_t);
+void *__wrap_malloc(size_t n) {if(fail_malloc){fail_malloc=0;errno=ENOMEM;return NULL;}return __real_malloc(n);}
 struct engine {const struct hu_tls_transport *t;int step,read_again,write_again,shutting;char pending[8];unsigned count;};
 static void *create(const struct hu_tls_options *o,const struct hu_tls_transport *t)
 {struct engine *e=calloc(1,sizeof(*e));assert(!strcmp(o->peer,"native.example"));e->t=t;return e;}
@@ -61,7 +66,9 @@ static int tr_read(void *p,void *b,unsigned n){return read(*(int *)p,b,n);}
 static int tr_write(void *p,const void *b,unsigned n){return write(*(int *)p,b,n);}
 static int tr_fd(void *p){return *(int *)p;}
 static void tr_close(void *p){closed++;close(*(int *)p);}
-static const struct hu_tls_transport_ops byte_ops={tr_read,tr_write,tr_fd,NULL,tr_close};
+static int tr_control(void *p,int op,void *b,unsigned n)
+{(void)p;(void)op;(void)b;(void)n;controls++;errno=EOPNOTSUPP;return -1;}
+static const struct hu_tls_transport_ops byte_ops={tr_read,tr_write,tr_fd,tr_control,tr_close};
 static const struct hu_tls_transport_ops rejected_ops={tr_read,tr_write,tr_fd,NULL,tr_close};
 static void test_byte_transport(void)
 {
@@ -120,6 +127,7 @@ static void test_failure_cancel_timeout(void)
     assert(!hu_tls_fd_attach(f[0],t));assert(hu_tls_write(t,"x",1)<0 && errno==EAGAIN);
     assert(!hu_tls_handshake(t));assert(write(f[1],"X",1)==1);
     assert(hu_tls_handshake(t)<0 && errno==EACCES);
+    assert(!hu_tls_info(t,&i) && i.error==2);
     assert(hu_tls_fd_read(f[0],&b,1)<0 && errno==EACCES);
     hu_tls_fd_close(f[0]);close(f[1]);
     assert(!socketpair(AF_UNIX,SOCK_STREAM,0,f));t=hu_tls_create(&backend,NULL,"native.example",100);
@@ -140,9 +148,31 @@ static void test_no_offload(void)
     assert(!hu_tls_info(hu_tls_fd_get(f[0]),&i) && i.state==HU_TLS_FAILED);
     hu_tls_fd_close(f[0]);assert(read(f[1],&b,1)==0);close(f[1]);
 }
+static void test_start_setup_failures(void)
+{
+    int f[2];struct hu_tls *t;int before=destroyed;
+    assert(!socketpair(AF_UNIX,SOCK_STREAM,0,f));
+    assert(hu_tls_fd_start(f[0],NULL,100)<0 && errno==EINVAL);
+    assert(fcntl(f[0],F_GETFD)<0 && errno==EBADF);close(f[1]);
+    assert(!socketpair(AF_UNIX,SOCK_STREAM,0,f));
+    fail_calloc=1;
+    assert(hu_tls_fd_start(f[0],"native.example",100)<0 && errno==ENOMEM);
+    assert(fcntl(f[0],F_GETFD)<0 && errno==EBADF);close(f[1]);
+    assert(!socketpair(AF_UNIX,SOCK_STREAM,0,f));
+    fail_malloc=1;
+    assert(hu_tls_fd_start(f[0],"native.example",100)<0 && errno==ENOMEM);
+    assert(fcntl(f[0],F_GETFD)<0 && errno==EBADF);close(f[1]);
+    assert(!socketpair(AF_UNIX,SOCK_STREAM,0,f));
+    t=hu_tls_create(&backend,NULL,"native.example",100);assert(t);
+    assert(!hu_tls_fd_attach(f[0],t));
+    assert(hu_tls_fd_start(f[0],"native.example",100)<0 && errno==EALREADY);
+    assert(hu_tls_fd_get(f[0])==t && fcntl(f[0],F_GETFD)>=0);
+    hu_tls_fd_close(f[0]);close(f[1]);assert(destroyed==before+1);
+}
 int main(void)
 {
     test_byte_transport();test_fd_adapter();test_failure_cancel_timeout();test_no_offload();
     assert(destroyed==5 && controls==0);
+    test_start_setup_failures();
     puts("PASS native-provider contract: byte-only transport, authentication gate, cross-direction waits, buffered plaintext, partial writes, cancellation, deadlines, fd cleanup");return 0;
 }

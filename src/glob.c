@@ -1,3 +1,6 @@
+#ifndef _POSIX_C_SOURCE
+#define _POSIX_C_SOURCE 200809L
+#endif
 #include <helios/unix/glob.h>
 #include <sys/types.h>
 #include <dirent.h>
@@ -51,39 +54,72 @@ static int add(struct hu_glob *g,const char *path,int directory)
 }
 static int path_error(struct hu_glob *g,const char *path,int e)
 {return (g->err&&g->err(path,e))||(g->flags&GLOB_ERR)?GLOB_ABORTED:0;}
+static int walk(struct hu_glob *g,const char *base,const char *pattern,unsigned depth);
+static int visit(struct hu_glob *g,char *path,const char *rest,unsigned depth)
+{
+    struct stat st;
+    if(*rest) {
+        const char *next=rest;size_t n;
+        while(*next=='/')next++;
+        if(stat(path,&st)<0||!S_ISDIR(st.st_mode))return 0;
+        n=strlen(path);
+        if(!*next) {
+            if(n+2>HU_PATH_LIMIT)return GLOB_NOSPACE;
+            path[n++]='/';path[n]=0;
+            return add(g,path,1);
+        }
+        return walk(g,path,next,depth+1);
+    }
+    return add(g,path,stat(path,&st)==0&&S_ISDIR(st.st_mode));
+}
+static int join(char *path,const char *base,const char *name)
+{
+    size_t b=strlen(base),n=strlen(name),slash=b&&base[b-1]!='/';
+    if(b+n+slash+1>HU_PATH_LIMIT)return GLOB_NOSPACE;
+    memcpy(path,base,b);if(slash)path[b++]='/';memcpy(path+b,name,n+1);return 0;
+}
 static int walk(struct hu_glob *g,const char *base,const char *pattern,unsigned depth)
 {
-    char component[HU_PATH_LIMIT],path[HU_PATH_LIMIT];const char *rest;
-    DIR *d;struct dirent *entry;struct stat st;size_t n,b;int e=0,hidden;
-    if(depth>128)return GLOB_NOSPACE;
+    struct buffers {char component[HU_PATH_LIMIT],path[HU_PATH_LIMIT];} *buf;
+    const char *rest,*p;char *q;DIR *d=NULL;struct dirent *entry;struct stat st;
+    size_t n;int e=0,hidden,magic=0;
+    if(depth>32)return GLOB_NOSPACE;
     if(!*pattern) {
         if(stat(*base?base:".",&st)<0)return 0;
         return add(g,*base?base:".",S_ISDIR(st.st_mode));
     }
     rest=pattern;while(*rest&&*rest!='/')rest++;
-    n=rest-pattern;if(n>=sizeof(component))return GLOB_NOSPACE;
-    memcpy(component,pattern,n);component[n]=0;
-    hidden=component[0]=='.'||(!(g->flags&GLOB_NOESCAPE)&&component[0]=='\\'&&component[1]=='.');
+    n=rest-pattern;if(n>=HU_PATH_LIMIT)return GLOB_NOSPACE;
+    buf=malloc(sizeof(*buf));if(!buf)return GLOB_NOSPACE;
+    memcpy(buf->component,pattern,n);buf->component[n]=0;
+    hidden=buf->component[0]=='.'||(!(g->flags&GLOB_NOESCAPE)&&buf->component[0]=='\\'&&buf->component[1]=='.');
+    for(p=buf->component;*p;p++) {
+        if(*p=='\\'&&!(g->flags&GLOB_NOESCAPE)&&p[1])p++;
+        else if(*p=='*'||*p=='?'||*p=='[')magic=1;
+    }
+    if(!magic) {
+        /* Literal lookups need search permission, not directory listing. */
+        for(p=buf->component,q=buf->component;*p;p++) {
+            if(*p=='\\'&&!(g->flags&GLOB_NOESCAPE)&&p[1])p++;
+            *q++=*p;
+        }
+        *q=0;e=join(buf->path,base,buf->component);
+        if(!e && (stat(buf->path,&st)==0 || (!*rest && lstat(buf->path,&st)==0)))
+            e=visit(g,buf->path,rest,depth);
+        else if(!e && errno!=ENOENT&&errno!=ENOTDIR)e=path_error(g,*base?base:".",errno);
+        goto done;
+    }
     d=opendir(*base?base:".");
-    if(!d){e=errno;if(e==ENOENT||e==ENOTDIR)return 0;return path_error(g,*base?base:".",e);}
+    if(!d){e=errno;e=(e==ENOENT||e==ENOTDIR)?0:path_error(g,*base?base:".",e);goto done;}
     while((entry=readdir(d))!=NULL) {
         if(entry->d_name[0]=='.'&&!hidden)continue;
-        if(!match(component,entry->d_name,g->flags&GLOB_NOESCAPE))continue;
-        b=strlen(base);n=strlen(entry->d_name);
-        if(b+n+2>sizeof(path)){e=GLOB_NOSPACE;break;}
-        strcpy(path,base);if(b&&path[b-1]!='/')path[b++]='/';strcpy(path+b,entry->d_name);
-        if(*rest) {
-            const char *next=rest;while(*next=='/')next++;
-            if(stat(path,&st)<0||!S_ISDIR(st.st_mode))continue;
-            if(!*next)strcat(path,"/");
-            e=walk(g,path,next,depth+1);
-        }else {
-            int dir=stat(path,&st)==0&&S_ISDIR(st.st_mode);
-            e=add(g,path,dir);
-        }
+        if(!match(buf->component,entry->d_name,g->flags&GLOB_NOESCAPE))continue;
+        e=join(buf->path,base,entry->d_name);
+        if(!e)e=visit(g,buf->path,rest,depth);
         if(e)break;
     }
-    closedir(d);return e;
+done:
+    if(d)closedir(d);free(buf);return e;
 }
 static int compare(const void *a,const void *b)
 {return strcmp(*(const char *const *)a,*(const char *const *)b);}

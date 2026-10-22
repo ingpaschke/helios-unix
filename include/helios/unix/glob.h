@@ -13,6 +13,8 @@ typedef struct {size_t gl_pathc;char **gl_pathv;size_t gl_offs;int gl_flags;} gl
 #define GLOB_NOSPACE 1
 #define GLOB_ABORTED 2
 #define GLOB_NOMATCH 3
+/* Paths include at most 1023 bytes; traversal is limited to 33 components.
+ * Larger patterns return GLOB_NOSPACE rather than exhausting task stacks. */
 int glob(const char *,int,int (*)(const char *,int),glob_t *);
 void globfree(glob_t *);
 #endif
