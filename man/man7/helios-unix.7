@@ -1,0 +1,71 @@
+.TH HELIOS-UNIX 7 "" "helios-unix" "Programming overview"
+.SH NAME
+helios-unix \- Unix compatibility interfaces for native Helios applications
+.SH DESCRIPTION
+helios-unix is an opt-in library using the native Helios ABI and resident
+libraries. It provides selected facilities for porting Unix applications to
+Transputers, including tasks running on processors without shared memory.
+It does not provide Unix fork, pthreads, shared memory or a complete POSIX API.
+.SH BUILDING AN APPLICATION
+Use a Helios-NG 1.31-SP2 SDK with resident Posix version 1001, its matching
+hu-spawn.h, llvm-t800 and the Helios assembler.
+Use the generated SDK header directories in this order:
+.IP 1. 3
+include/helios-unix/compat (opt-in compatibility declarations).
+.IP 2.
+include/helios-unix (the helios/unix headers).
+.IP 3.
+The native SDK include directory.
+.PP
+Link helios-unix.lib before bsd.lib, c.lib and helios.lib.
+The staged lib/helios-unix-flags.json records compiler definitions and include
+order. Compile dependencies with the same header profile as the application.
+Do not combine this archive with an unrelated libc ABI.
+.SH CHOOSING AN INTERFACE
+.TP
+hu_spawn(3)
+Start a separate task with arguments, environment, descriptor actions and
+optional processor selection. Use waitpid and kill for its lifecycle.
+.TP
+hu_channel(3)
+Create a bounded stream between tasks through the native FIFO server,
+including tasks on different processors. No TCP stack is involved.
+.TP
+hu_poll(3)
+Wait for sockets, native FIFO channels and regular files. Terminals and
+native anonymous pipes are outside this API's supported object classes.
+.TP
+getaddrinfo(3)
+Resolve IPv4 names synchronously. hu_resolve(3) runs lookup in a helper task
+when the application must remain responsive.
+.TP
+hu_terminal(3)
+Read dimensions, save/restore raw mode and optionally normalize native
+console input. TERM alone does not describe the terminal service's key format.
+.TP
+hu_tls(3)
+Use an owned TLS object independently of where encryption runs.
+hu_tls_fd(3) adapts older descriptor/select event loops.
+.TP
+glob(3), mkstemp(3)
+Expand filename patterns and create exclusive temporary files.
+.SH ERROR HANDLING AND OWNERSHIP
+Check each page's return convention: spawning returns an error number;
+name lookup returns an EAI code; most other calls return -1 and set errno.
+TLS handshake and shutdown steps distinguish pending from complete.
+.PP
+Close unused channel endpoints, reap helper tasks and release owned results.
+Task descriptors do not share cached status or file positions in the Unix
+fork sense. These interfaces are for the application thread or a single event
+loop; they do not promise concurrent spawn/close or concurrent TLS-object use.
+.SH RUNTIME REQUIREMENTS
+Channels require /fifo with readiness support. Async lookup requires
+/helios/lib/hu-resolve. DNS configuration is /helios/etc/resolv.cnf, with local
+entries in /helios/etc/hosts.
+.PP
+The supplied TLS provider uses the Linux I/O server's optional TLS service
+(IOS_TLS=1). The provider interface also permits a native byte-transport
+engine, but this library does not include a Transputer cryptographic engine.
+An unavailable provider fails explicitly; there is no plaintext fallback.
+.SH SEE ALSO
+hu_spawn(3), hu_channel(3), hu_poll(3), hu_resolve(3), hu_terminal(3), hu_tls(3)

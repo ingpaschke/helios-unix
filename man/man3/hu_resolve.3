@@ -1,0 +1,60 @@
+.TH HU_RESOLVE 3 "" "helios-unix" "Library functions"
+.SH NAME
+hu_resolve_launch, hu_resolve_receive, hu_resolve_send \- run name lookup in a helper task
+.SH SYNOPSIS
+.nf
+#include <helios/unix/resolve.h>
+
+int hu_resolve_launch(pid_t *pid, int writer, const char *name,
+                      int reverse, const struct hu_spawn_attr *attr);
+int hu_resolve_receive(int reader, struct hu_resolve_result *result);
+int hu_resolve_send(int writer, const char *name, int reverse);
+
+struct hu_resolve_result {
+    int error, count;
+    unsigned char addresses[32][4];
+    char canonical[256];
+};
+.fi
+.SH DESCRIPTION
+Use a native channel and a separate resolver task so that a slow DNS query
+does not block the main application's event loop.
+.IP 1. 3
+Create endpoints with hu_channel.
+.IP 2.
+Pass the write endpoint to hu_resolve_launch. It starts /helios/lib/hu-resolve
+with that endpoint as stdout. name must contain 1..253 bytes. A nonzero
+reverse requests reverse-name lookup as well. attr may select task placement;
+the helper always closes extra descriptors at or above 3.
+.IP 3.
+On success, close the parent's write endpoint and save the PID. On launch
+failure, close both endpoints. The launch call does not consume either one.
+.IP 4.
+Wait for input on the read endpoint using hu_poll and an application-selected
+query deadline. Then call hu_resolve_receive. After successful receipt, check
+result.error before using its count, network-order address bytes or canonical
+name. A successful transport does not imply successful DNS.
+.IP 5.
+Close the reader and reap the helper with waitpid. On cancellation or timeout,
+close the channel, terminate the helper with kill, and reap it. Handle EINTR
+when waiting for the child.
+.PP
+hu_resolve_receive sets the reader nonblocking and leaves it that way. It may
+wait up to two seconds to assemble a fragmented reply; this is not the DNS
+query deadline. A partial-reply failure is terminal: cancel and clean up
+rather than calling receive again on the consumed frame.
+.PP
+hu_resolve_send is the helper-side synchronous lookup and reply writer.
+Applications normally use launch instead. The fixed 392-byte message contains
+values, never pointers or shared process state. Results have no dynamically
+allocated members and need no free function.
+.SH RETURN VALUE
+hu_resolve_launch returns 0 or an error number, following hu_spawn.
+hu_resolve_receive and hu_resolve_send return 0 or -1 with errno set.
+receive reports EIO for malformed or truncated replies and ETIMEDOUT for a
+stalled reply. After receive returns 0, result.error is an EAI code, described
+by gai_strerror. count is at most 32; canonical is NUL-terminated.
+.SH FILES
+/helios/lib/hu-resolve must be installed for launch to work.
+.SH SEE ALSO
+getaddrinfo(3), hu_channel(3), hu_poll(3), hu_spawn(3)

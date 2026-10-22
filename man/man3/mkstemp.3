@@ -1,0 +1,38 @@
+.TH MKSTEMP 3 "" "helios-unix" "Library functions"
+.SH NAME
+mkstemp \- create and open an exclusive temporary file
+.SH SYNOPSIS
+.nf
+#include <stdlib.h>
+int mkstemp(char *template);
+.fi
+.SH DESCRIPTION
+template must be a writable string ending in six X characters. mkstemp
+replaces them with a candidate suffix and opens with O_RDWR, O_CREAT and
+O_EXCL, requesting mode 0600. Helios server access matrices determine actual
+access rights. Exclusive creation depends on the target server supporting it.
+.PP
+On success the modified template names the file and the caller owns its
+descriptor. Close the descriptor and unlink the file when finished.
+The function retries name collisions up to 256 times. Suffixes are generated
+from time, task ID and a counter; they are not random tokens.
+.SH EXAMPLE
+.EX
+#include <stdlib.h>
+#include <unistd.h>
+
+int temporary_work(void)
+{
+    char name[] = "/helios/tmp/workXXXXXX";
+    int fd = mkstemp(name);
+    if (fd < 0) return -1;
+    /* Read and write through fd here. */
+    close(fd);
+    return unlink(name);
+}
+.EE
+.SH RETURN VALUE
+An open descriptor, or -1 with errno set. EINVAL indicates an invalid template;
+EEXIST indicates exhausted collision retries. Other open errors propagate.
+.SH SEE ALSO
+glob(3), helios-unix(7)

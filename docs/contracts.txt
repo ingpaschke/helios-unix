@@ -94,6 +94,10 @@ Terminal and utilities
   SIGWINCH/foreground ownership remains the existing xterm/native tty contract.
   hu_terminal_decoder explicitly enables C1 CSI/SS3 conversion only for terminal
   input and preserves fragmented UTF-8 continuation bytes. It never hooks read.
+  Both the native io-server console and xterm-ttyserv translate recognised keys
+  to Helios sequences before applications read them. TERM=xterm alone is not a
+  reason to disable this profile. The helper expands prefixes only; it does not
+  remap every function-key sequence or convert arbitrary character encodings.
   The optional setupterm/tiget*/tputs component contains Irssi's small ANSI/xterm
   capability table, not a terminfo database or curses implementation. Its absent
   capability returns follow this consumer's conventions; do not advertise a

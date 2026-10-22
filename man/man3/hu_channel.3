@@ -1,0 +1,31 @@
+.TH HU_CHANNEL 3 "" "helios-unix" "Library functions"
+.SH NAME
+hu_channel \- create a bounded native stream between tasks
+.SH SYNOPSIS
+.nf
+#include <helios/unix/channel.h>
+int hu_channel(int fds[2]);
+.fi
+.SH DESCRIPTION
+Create a unidirectional stream backed by the native /fifo service.
+fds[0] is the read endpoint and fds[1] the write endpoint. The buffer holds
+16 KiB; backpressure applies when it fills. Use one producer and one consumer.
+This is not a claim of POSIX pipe or PIPE_BUF atomic-write semantics.
+.PP
+Endpoints can be inherited using hu_spawn descriptor actions even across
+processors. Communicating tasks use native messages, not TCP sockets.
+Close unused endpoints in both tasks: a retained writer prevents the reader
+from seeing EOF after the buffer drains. Handle partial reads and writes.
+.SH EXAMPLE
+To feed a child's standard input, create a channel, adddup2 its read end to
+descriptor 0, and use closefrom=3 to discard extra inherited descriptors.
+After successful spawning, close the parent's read end. Write through its
+write end, close it to signal EOF, and reap the child. On launch failure,
+close both endpoints. If an original endpoint is below 3, explicitly close
+unused standard-descriptor copies without closing the final redirected fd.
+.SH RETURN VALUE
+0 on success; -1 with errno set on failure. Both output slots are initialized
+to -1 before creation. EINVAL indicates NULL fds; ENOENT can indicate that
+/fifo is unavailable. Creation and endpoint-open errors are also reported.
+.SH SEE ALSO
+hu_spawn(3), hu_poll(3), hu_resolve(3)

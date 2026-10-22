@@ -11,7 +11,7 @@ for programs running on Transputers.
 - Bounded FIFO channels for communication between tasks, including tasks on
   different processors.
 - `hu_poll` readiness for sockets, FIFO channels and regular files.
-- Terminal size, raw-mode handling and terminal-input decoding.
+- Terminal size, raw-mode handling and optional native-console key conversion.
 - Filename globbing and temporary-file creation.
 - TLS client connections with a provider interface and a descriptor adapter
   for event loops. The supplied provider uses the Linux I/O server's optional
@@ -53,6 +53,32 @@ Link `helios-unix.lib` before `bsd.lib`, `c.lib` and `helios.lib`. The generated
 `lib/helios-unix-flags.json` records include order and compiler definitions.
 Install the resolver helper at `/helios/lib/hu-resolve` for asynchronous lookup.
 Use the same header profile for the application and its dependencies.
+
+## Manuals
+
+Start with `man 7 helios-unix`. The section 3 pages cover `hu_spawn`,
+`hu_channel`, `hu_poll`, `getaddrinfo`, `hu_resolve`, `hu_terminal`, `hu_tls`,
+`hu_tls_fd`, `glob` and `mkstemp`, including examples and ownership rules.
+Individual function names work too, for example `man hu_tls_attach_fd`.
+The distribution's manual build installs both source and preformatted pages
+for the native `man` reader and Xman.
+
+To read directly on a Unix host, run from this checkout:
+
+```sh
+man -M "$PWD/man" 7 helios-unix
+man -M "$PWD/man" 3 hu_terminal_read
+```
+
+`make -C man install PREFIX=/usr/local` installs host manuals; `DESTDIR` is
+supported for packaging. `make -C man check` checks all pages with groff.
+To also compile the C examples against a staged SP2 SDK:
+
+```sh
+python3 man/check.py --clang /opt/llvm-t800/bin/clang \
+  --sdk ../ktm-distribution/work/sdk/prod/TRAN \
+  --stage ../ktm-distribution/work/compat/stage
+```
 
 ## Tests
 

@@ -1,0 +1,115 @@
+.TH HU_TLS 3 "" "helios-unix" "Library functions"
+.SH NAME
+hu_tls_create, hu_tls_attach, hu_tls_attach_fd, hu_tls_handshake, hu_tls_handshake_wait, hu_tls_read, hu_tls_write, hu_tls_pending, hu_tls_info, hu_tls_interest, hu_tls_wait, hu_tls_shutdown, hu_tls_destroy \- use an owned TLS connection
+.SH SYNOPSIS
+.nf
+#include <helios/unix/tls.h>
+
+struct hu_tls *hu_tls_create(const struct hu_tls_backend *backend,
+    const void *configuration, const char *peer, unsigned timeout_ms);
+int hu_tls_attach(struct hu_tls *tls,
+                   const struct hu_tls_transport *transport);
+int hu_tls_attach_fd(struct hu_tls *tls, int fd);
+int hu_tls_handshake(struct hu_tls *tls);
+int hu_tls_handshake_wait(struct hu_tls *tls);
+int hu_tls_read(struct hu_tls *tls, void *buffer, unsigned size);
+int hu_tls_write(struct hu_tls *tls, const void *buffer, unsigned size);
+unsigned hu_tls_pending(struct hu_tls *tls);
+int hu_tls_info(struct hu_tls *tls, struct hu_tls_info *info);
+int hu_tls_interest(struct hu_tls *tls, int operation,
+                     struct hu_tls_wait *interest);
+int hu_tls_wait(struct hu_tls *tls, int operation, int timeout_ms);
+int hu_tls_shutdown(struct hu_tls *tls);
+void hu_tls_destroy(struct hu_tls *tls);
+.fi
+.SH DESCRIPTION
+Connect a transport first, create a TLS object, attach the transport and
+complete the handshake. Then send all application data through the object.
+The API is independent of where encryption executes; do not expose a host
+socket-upgrade interface to the application.
+.PP
+NULL backend selects the supplied host-offload provider; configuration is
+provider-specific (use NULL for the default). peer is the expected server
+hostname or IP address, copied by create. Its length must be 1..255 bytes.
+timeout_ms is a handshake deadline in 100..120000 milliseconds. backend and
+configuration must outlive the object. There is no plaintext fallback.
+.SS Ownership
+hu_tls_attach transfers transport ownership only on success. Its callback
+table and context must remain valid while attached. See tls_backend.h for
+provider/transport definitions.
+.PP
+hu_tls_attach_fd is the connected-descriptor convenience transport. It makes
+the fd nonblocking and transfers ownership on success only. The fd must be
+below FD_SETSIZE and must not already be registered with the TLS fd adapter.
+After attachment use the object, not raw read/write/close on the fd.
+This call does not register a hu_tls_fd adapter entry.
+.SS Handshake and event loops
+hu_tls_handshake returns 1 when ready, 0 when pending, or -1 on failure.
+hu_tls_handshake_wait drives negotiation synchronously and returns 0 on
+success or -1 on failure. Its deadline includes time between handshake calls.
+.PP
+Read and write return transferred byte counts, or -1 with errno set. Read
+returns 0 at end of stream. Handle short writes. On EAGAIN, obtain interest
+for the operation that blocked, wait, then retry. A read can require transport
+writability and a write can require readability. Preserve unaccepted output
+while retrying; advance the buffer only by bytes actually accepted.
+.PP
+hu_tls_interest fills struct hu_tls_wait with fd, events (HU_TLS_WAIT_READ
+and/or HU_TLS_WAIT_WRITE) and timeout_ms (-1 means no provider timer).
+Operations are HU_TLS_READ, HU_TLS_WRITE, HU_TLS_HANDSHAKE and HU_TLS_SHUTDOWN.
+Include both the requested fd readiness and provider timer in the event loop.
+hu_tls_pending reports already decrypted bytes; consume these without waiting
+for more wire input.
+.PP
+hu_tls_wait is a convenience wait for an operation. Its timeout is milliseconds;
+-1 imposes no caller deadline. It returns 1 for readiness or a due provider
+timer, 0 for the caller's timeout, or -1 with errno set. A wake means retry the
+operation, not that negotiation or I/O has completed.
+.SS Status and closing
+hu_tls_info copies state, provider error, protocol, cipher and diagnostic
+message. States are HU_TLS_NEGOTIATING, HU_TLS_READY, HU_TLS_FAILED and
+HU_TLS_CLOSED. Provider error is diagnostic information, distinct from errno.
+.PP
+hu_tls_shutdown sends accepted output and TLS close notification, returning
+1 complete, 0 pending or -1 failure. Drive pending shutdown with its readiness
+interest and an application deadline. hu_tls_destroy cancels immediately and
+releases the owned transport exactly once; it does not promise graceful
+shutdown. NULL is accepted. Use each object from one event loop, not concurrently.
+.SH EXAMPLE
+Take a connected fd and return a ready TLS object. This example consumes the
+fd on every path; the attachment API itself consumes it only on success.
+.EX
+#include <helios/unix/tls.h>
+#include <unistd.h>
+#include <errno.h>
+
+struct hu_tls *secure_connection(int fd, const char *peer)
+{
+    struct hu_tls *tls;
+    int error;
+    tls = hu_tls_create(0, 0, peer, 10000);
+    if (!tls) {
+        error = errno; close(fd); errno = error; return 0;
+    }
+    if (hu_tls_attach_fd(tls, fd) < 0) {
+        error = errno;
+        close(fd); hu_tls_destroy(tls); errno = error; return 0;
+    }
+    if (hu_tls_handshake_wait(tls) < 0) {
+        error = errno;
+        hu_tls_destroy(tls); errno = error; return 0;
+    }
+    return tls;
+}
+.EE
+.SH PROVIDERS
+The default requires the Linux I/O server's TLS service, with certificate
+trust configured on that host. It verifies the peer and supports hostname
+indication. It does not expose client certificates, ALPN or an insecure mode.
+No native Transputer cryptographic provider is included.
+.SH RETURN VALUE
+create returns a pointer or NULL with errno set. Attach, info and interest
+return 0 or -1 with errno set. Handshake, wait, I/O and shutdown conventions
+are described above. Failed negotiation remains failed; do not retry as plaintext.
+.SH SEE ALSO
+hu_tls_fd(3), getaddrinfo(3), helios-unix(7)

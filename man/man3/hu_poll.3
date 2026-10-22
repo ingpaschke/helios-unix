@@ -1,0 +1,48 @@
+.TH HU_POLL 3 "" "helios-unix" "Library functions"
+.SH NAME
+hu_poll \- wait for readiness on supported Helios descriptors
+.SH SYNOPSIS
+.nf
+#include <helios/unix/poll.h>
+struct hu_pollfd { int fd; short events, revents; };
+int hu_poll(struct hu_pollfd *fds, unsigned count, int timeout_ms);
+.fi
+.SH DESCRIPTION
+Wait on /internet sockets with readiness support, native FIFO channels, or
+regular files. Regular files report immediate read/write readiness.
+Terminals and native anonymous pipes are not supported: the call fails with
+EOPNOTSUPP. This is a restricted interface, not a general POSIX poll replacement.
+.PP
+Request HU_POLLIN, HU_POLLOUT and/or HU_POLLPRI in events. Inspect revents after
+every successful call. HU_POLLERR, HU_POLLHUP and HU_POLLNVAL are reported even
+when not requested. Invalid nonnegative descriptors get HU_POLLNVAL; negative
+entries are ignored. Duplicate entries count separately. Buffered data can
+coexist with HU_POLLHUP; drain the input before treating it as EOF.
+.PP
+timeout_ms is in milliseconds: 0 tests immediately, any negative value waits
+indefinitely. Readiness is a hint to retry I/O, not a guarantee that a whole
+buffer can be read or written. Use nonblocking I/O for an event loop.
+The implementation uses native readiness notifications rather than repeated
+network polling and preserves the original deadline across spurious wakes.
+.SH EXAMPLE
+.EX
+#include <helios/unix/poll.h>
+
+/* Return readiness bits, zero on timeout, or -1 with errno set. */
+int wait_for_input(int fd)
+{
+    struct hu_pollfd p;
+    int result;
+    p.fd = fd;
+    p.events = HU_POLLIN;
+    p.revents = 0;
+    result = hu_poll(&p, 1, 5000);
+    return result > 0 ? p.revents : result;
+}
+.EE
+.SH RETURN VALUE
+Number of entries with nonzero revents, 0 for timeout, or -1 with errno set.
+EINTR means the wait was interrupted. EINVAL indicates invalid arguments,
+including count above 65536. fds may be NULL when count is zero.
+.SH SEE ALSO
+hu_channel(3), hu_set_nonblock(3), hu_tls_fd(3)

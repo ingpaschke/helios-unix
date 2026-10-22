@@ -1,0 +1,79 @@
+.TH GETADDRINFO 3 "" "helios-unix" "Library functions"
+.SH NAME
+getaddrinfo, freeaddrinfo, gai_strerror, getnameinfo \- resolve IPv4 names and addresses
+.SH SYNOPSIS
+.nf
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <helios/unix/netdb.h>
+
+int getaddrinfo(const char *node, const char *service,
+                const struct addrinfo *hints, struct addrinfo **result);
+void freeaddrinfo(struct addrinfo *result);
+const char *gai_strerror(int error);
+int getnameinfo(const struct sockaddr *address, socklen_t length,
+                char *host, socklen_t hostsize,
+                char *service, socklen_t servicesize, int flags);
+.fi
+.SH DESCRIPTION
+getaddrinfo returns an allocated linked list of addresses. Zero-initialize
+hints, then select AF_INET or AF_UNSPEC and SOCK_STREAM or SOCK_DGRAM as needed.
+Only IPv4, TCP and UDP are supported. Each result supplies ai_family,
+ai_socktype, ai_protocol, ai_addr and ai_addrlen for socket/connect/bind.
+Try successive addresses when a connection fails; close each failed socket.
+Release the whole list with freeaddrinfo, which also accepts NULL.
+.PP
+The service can be a decimal port or a service database name. With NULL node,
+AI_PASSIVE requests the wildcard address for bind; otherwise the loopback
+address is used. Both node and service cannot be NULL.
+.PP
+Supported hint flags are AI_PASSIVE, AI_CANONNAME (request the canonical name
+in the first result), AI_NUMERICHOST and AI_NUMERICSERV (disable the corresponding
+name lookup). At most 32 distinct IPv4 addresses are collected; unspecified
+socket type can produce both TCP and UDP results.
+.PP
+getnameinfo writes NUL-terminated host/service strings into caller-owned buffers.
+Either output may be NULL, but not both. NI_NUMERICHOST and NI_NUMERICSERV
+request numeric results. Without NI_NAMEREQD, unavailable reverse DNS falls
+back to a numeric address. NI_DGRAM selects UDP service names instead of TCP.
+.PP
+These calls are synchronous and can wait for DNS. Use hu_resolve for lookup
+outside a responsive application's main task. Local hosts-file entries take
+precedence over DNS. DNS supports search names, CNAMEs and TCP fallback.
+.SH RETURN VALUE
+0 on success, otherwise an EAI error code. Describe it with gai_strerror;
+its returned string is borrowed and must not be freed. Errors include
+EAI_NONAME, EAI_AGAIN, EAI_FAMILY, EAI_SOCKTYPE, EAI_SERVICE, EAI_BADFLAGS,
+EAI_MEMORY and EAI_OVERFLOW. Do not use perror for an EAI error.
+.SH EXAMPLE
+.EX
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <helios/unix/netdb.h>
+#include <stdio.h>
+
+int list_addresses(const char *name)
+{
+    struct addrinfo hints = {0}, *list, *p;
+    char host[64];
+    int error;
+    hints.ai_family = AF_INET;
+    hints.ai_socktype = SOCK_STREAM;
+    error = getaddrinfo(name, "443", &hints, &list);
+    if (error) {
+        fprintf(stderr, "%s\en", gai_strerror(error));
+        return error;
+    }
+    for (p = list; p; p = p->ai_next) {
+        error = getnameinfo(p->ai_addr, p->ai_addrlen,
+                            host, sizeof(host), 0, 0, NI_NUMERICHOST);
+        if (!error) puts(host);
+    }
+    freeaddrinfo(list);
+    return 0;
+}
+.EE
+.SH FILES
+/helios/etc/hosts, /helios/etc/resolv.cnf
+.SH SEE ALSO
+hu_resolve(3), hu_tls(3), helios-unix(7)

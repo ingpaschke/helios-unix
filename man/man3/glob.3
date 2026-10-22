@@ -1,0 +1,64 @@
+.TH GLOB 3 "" "helios-unix" "Library functions"
+.SH NAME
+glob, globfree \- expand filename patterns
+.SH SYNOPSIS
+.nf
+#include <helios/unix/glob.h>
+int glob(const char *pattern, int flags,
+          int (*error_callback)(const char *, int), glob_t *result);
+void globfree(glob_t *result);
+.fi
+.SH DESCRIPTION
+Expand *, ?, bracket sets/ranges and backslash escapes in pathname components.
+A leading dot must be matched explicitly. Results are sorted bytewise unless
+GLOB_NOSORT is set; locale collation is not implemented.
+.PP
+Zero-initialize glob_t before first use. gl_pathc counts paths and gl_pathv
+contains allocated strings followed by a NULL pointer. Release results with
+globfree, including partial results after an error.
+.TP
+GLOB_ERR
+Abort on directory errors. The optional callback receives path and errno;
+a nonzero callback return also aborts.
+.TP
+GLOB_MARK
+Append / to directory names.
+.TP
+GLOB_NOCHECK
+Return the pattern itself when no match exists.
+.TP
+GLOB_DOOFFS
+Reserve gl_offs initial NULL entries in gl_pathv; initialize gl_offs first.
+.TP
+GLOB_APPEND
+Append to an existing result. Use the same offset convention on all calls.
+.TP
+GLOB_NOESCAPE
+Treat backslash as an ordinary character.
+.TP
+GLOB_TILDE
+Expand the current user's ~ using HOME; ~otheruser is unsupported.
+.SH RETURN VALUE
+0 on success; GLOB_NOMATCH, GLOB_NOSPACE or GLOB_ABORTED on failure.
+These are glob results, not errno values. Paths are limited to 1023 bytes
+and traversal to 33 components; oversized patterns return GLOB_NOSPACE.
+The implementation also bounds result/offset growth.
+.SH EXAMPLE
+.EX
+#include <helios/unix/glob.h>
+#include <stdio.h>
+
+int list_sources(void)
+{
+    glob_t result = {0};
+    size_t i;
+    int error = glob("*.c", 0, 0, &result);
+    if (!error)
+        for (i = 0; i < result.gl_pathc; ++i)
+            puts(result.gl_pathv[i]);
+    globfree(&result);
+    return error;
+}
+.EE
+.SH SEE ALSO
+mkstemp(3), helios-unix(7)

@@ -1,0 +1,75 @@
+.TH HU_TLS_FD 3 "" "helios-unix" "Library functions"
+.SH NAME
+hu_tls_fd_attach, hu_tls_fd_get, hu_tls_fd_start, hu_tls_fd_handshake, hu_tls_fd_connect, hu_tls_fd_read, hu_tls_fd_write, hu_tls_fd_select, hu_tls_fd_close \- adapt descriptor-based applications to TLS
+.SH SYNOPSIS
+.nf
+#include <helios/unix/tls_fd.h>
+
+int hu_tls_fd_attach(int fd, struct hu_tls *tls);
+struct hu_tls *hu_tls_fd_get(int fd);
+int hu_tls_fd_start(int fd, const char *peer, unsigned timeout_ms);
+int hu_tls_fd_handshake(int fd, struct hu_tls_info *info);
+int hu_tls_fd_connect(int fd, const char *peer, unsigned timeout_ms,
+                       struct hu_tls_info *info);
+int hu_tls_fd_read(int fd, void *buffer, unsigned size);
+int hu_tls_fd_write(int fd, const void *buffer, unsigned size);
+int hu_tls_fd_select(int nfds, fd_set *readfds, fd_set *writefds,
+                      fd_set *exceptfds, struct timeval *timeout);
+int hu_tls_fd_close(int fd);
+.fi
+.SH DESCRIPTION
+This task-local adapter associates descriptor numbers with TLS objects for
+applications built around select. Route all read, write, select and close
+operations through the adapter; unattached descriptors pass through to their
+native operations. A registered fd is a key, not an encrypted OS descriptor.
+Do not use dup, fdopen, send/recv, raw close, or pass it to another task.
+.PP
+hu_tls_fd_attach accepts a newly created, unattached TLS object and a connected
+fd, taking both only on success. hu_tls_fd_get returns a borrowed object or
+NULL for an unregistered descriptor. Do not destroy that borrowed object.
+.PP
+For the default provider, start accepts a fresh connected fd and begins
+negotiation. It returns 0 if ready or pending, -1 on failure. Follow with
+handshake, which fills a required info structure and returns 1 ready, 0
+pending, or -1 failure. Use the object's HU_TLS_HANDSHAKE interest to wait.
+connect performs this sequence synchronously, returning 0 on success or -1
+on failure; info must be non-NULL.
+.SS Failure ownership
+Unlike attach, start takes ownership on entry. Setup failures close the fd;
+handshake failures leave a registered failed object for adapter close.
+After failure on a fresh fd, call hu_tls_fd_close only if hu_tls_fd_get returns
+non-NULL. Do not blindly close the number: it may already have been released.
+Starting an already attached descriptor fails with EALREADY and leaves that
+existing connection intact. connect with NULL info fails before taking ownership.
+.PP
+Read/write use the TLS byte-count and EAGAIN conventions in hu_tls(3).
+select translates physical TLS interests into requested application readiness,
+including buffered plaintext and provider timers. Readiness means retry I/O;
+it can still return EAGAIN. Native FD_SETSIZE limits apply. There is no TLS
+urgent-data channel. Use this adapter from one event loop.
+.PP
+close removes the association before descriptor reuse. It gives established
+sessions up to five seconds to drain shutdown, then releases the descriptor
+even on error. Pending negotiation is cancelled. Never retry adapter close.
+.SH EXAMPLE
+This routine consumes a fresh connected fd on all paths and returns it ready
+for adapter I/O, or -1 on error.
+.EX
+#include <helios/unix/tls_fd.h>
+#include <errno.h>
+
+int secure_fd(int fd, const char *peer)
+{
+    struct hu_tls_info info;
+    int error;
+    if (hu_tls_fd_connect(fd, peer, 10000, &info) < 0) {
+        error = errno;
+        if (hu_tls_fd_get(fd)) hu_tls_fd_close(fd);
+        errno = error;
+        return -1;
+    }
+    return fd;
+}
+.EE
+.SH SEE ALSO
+hu_tls(3), helios-unix(7)

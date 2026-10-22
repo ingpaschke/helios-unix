@@ -1,0 +1,81 @@
+.TH HU_SPAWN 3 "" "helios-unix" "Library functions"
+.SH NAME
+hu_spawn, hu_spawnp, hu_spawn_actions_init, hu_spawn_actions_destroy, hu_spawn_addclose, hu_spawn_adddup2, hu_spawn_addopen \- launch a native Helios task
+.SH SYNOPSIS
+.nf
+#include <helios/unix/spawn.h>
+
+void hu_spawn_actions_init(struct hu_spawn_actions *actions);
+void hu_spawn_actions_destroy(struct hu_spawn_actions *actions);
+int hu_spawn_addclose(struct hu_spawn_actions *actions, int fd);
+int hu_spawn_adddup2(struct hu_spawn_actions *actions, int from, int to);
+int hu_spawn_addopen(struct hu_spawn_actions *actions, int fd,
+                     const char *path, int flags);
+int hu_spawn(pid_t *pid, const char *path,
+             const struct hu_spawn_actions *actions,
+             const struct hu_spawn_attr *attr,
+             char *const argv[], char *const envp[]);
+int hu_spawnp(pid_t *pid, const char *name,
+              const struct hu_spawn_actions *actions,
+              const struct hu_spawn_attr *attr,
+              char *const argv[], char *const envp[]);
+.fi
+.SH DESCRIPTION
+Launch a new task without copying the parent's address space.
+hu_spawnp searches the caller's PATH if the name contains no slash.
+NULL envp inherits the environment. Argument and environment arrays end with
+a NULL pointer. A successful call writes a PID usable with waitpid and kill.
+.PP
+Initialize an action list before adding actions and destroy it afterwards,
+including on error. addopen copies its pathname. Actions apply in order to
+the child's descriptor description without changing the parent's descriptors.
+There are at most 32 actions; descriptor numbers must be in 0..4095.
+Opening or truncating a file can have effects even if later launch steps fail.
+.PP
+NULL actions means no descriptor actions. NULL attr selects defaults.
+Otherwise zero-initialize struct hu_spawn_attr and set the desired fields:
+.TP
+placement
+HU_SPAWN_DEFAULT uses normal task placement, including the session's Taskforce
+Manager where available. HU_SPAWN_LOCAL selects this processor.
+HU_SPAWN_PROCESSOR selects the processor named by processor.
+.TP
+processor
+Processor object pathname, required for HU_SPAWN_PROCESSOR.
+.TP
+directory
+Child working directory; NULL keeps the current directory.
+.TP
+closefrom
+Close child descriptors at or above this number after actions; 0 disables
+this step. FD_CLOEXEC descriptors are also excluded.
+.SH RETURN VALUE
+Launch and add-action functions return 0 or an error number such as EINVAL,
+ENOMEM or ENOENT. Use strerror on that value; do not assume errno contains it.
+The PID is valid only after a successful launch.
+.SH EXAMPLE
+Launch a command with only its standard descriptors, then wait for it.
+.EX
+#include <helios/unix/spawn.h>
+#include <sys/wait.h>
+#include <errno.h>
+
+int run_command(char *const argv[], int *status)
+{
+    struct hu_spawn_attr attr = {0};
+    pid_t pid, waited;
+    int error;
+    attr.closefrom = 3;
+    error = hu_spawnp(&pid, argv[0], 0, &attr, argv, 0);
+    if (error) return error;
+    do { waited = waitpid(pid, status, 0); }
+    while (waited < 0 && errno == EINTR);
+    return waited < 0 ? errno : 0;
+}
+.EE
+.SH NOTES
+Use hu_channel for streams that must survive launching tasks on separate
+processors. Descriptor inheritance does not provide Unix shared file-offset
+or status-flag semantics. Do not perform concurrent spawn and close operations.
+.SH SEE ALSO
+hu_channel(3), hu_resolve(3), helios-unix(7)

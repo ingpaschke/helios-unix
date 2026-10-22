@@ -1,0 +1,91 @@
+.TH HU_TERMINAL 3 "" "helios-unix" "Library functions"
+.SH NAME
+hu_terminal_size, hu_terminal_raw, hu_terminal_restore, hu_terminal_read, hu_set_nonblock \- use a native Helios terminal
+.SH SYNOPSIS
+.nf
+#include <termios.h>
+#include <helios/unix/api.h>
+
+int hu_terminal_size(int fd, unsigned *rows, unsigned *columns);
+int hu_terminal_raw(int fd, struct termios *saved);
+int hu_terminal_restore(int fd, const struct termios *saved);
+int hu_set_nonblock(int fd, int enabled);
+
+struct hu_terminal_decoder {
+    unsigned utf8_remaining;
+    int helios_c1;
+};
+int hu_terminal_read(int fd, struct hu_terminal_decoder *decoder,
+                     char *buffer, int size);
+.fi
+.SH DESCRIPTION
+hu_terminal_size reads the current dimensions from native terminal attributes.
+Query again after a resize notification. A SIGWINCH handler should set a flag;
+read the dimensions in the application's normal control flow.
+Helios uses attribute fields for dimensions which Unix uses for read timing;
+do not overwrite these with Unix VMIN/VTIME settings.
+.PP
+hu_terminal_raw saves the full terminal state, then disables canonical input,
+echo, terminal-generated signals, flow control and input/output translations.
+Ctrl-C consequently arrives as input; the application must arrange its own
+exit handling. Call hu_terminal_restore with the saved state on every exit
+after successful raw-mode setup.
+.PP
+hu_set_nonblock changes O_NONBLOCK while preserving other descriptor flags.
+This helper also works on non-terminal descriptors.
+.SS Input profiles
+Initialize a decoder once for each input stream. With helios_c1 set to 1,
+hu_terminal_read expands standalone CSI (byte 0x9b) to ESC [ and SS3 (0x8f)
+to ESC O. It preserves ordinary escape sequences and tracks UTF-8 continuation
+bytes across reads so that those bytes are not expanded.
+This is prefix conversion, not a complete function-key mapping or character
+encoding conversion. Other terminal encodings need their own input policy.
+.PP
+The native Helios console converts recognised terminal keys into Helios key
+sequences. The supplied xterm-ttyserv does the same: xterm sends ESC [ A for
+Up, ttyserv maps it to 0x9b A, and an opted-in Unix application expands it
+back to ESC [ A. Therefore TERM=xterm does not by itself mean that conversion
+should be disabled. Select this profile according to the terminal service.
+.PP
+Set helios_c1 to 0 for an untranslated byte stream. Ordinary read calls are
+never intercepted. Do not apply this terminal decoder to files or network
+traffic. Keep the decoder state across calls; reset it when switching streams.
+.PP
+The output buffer must have at least two bytes. The result is not terminated
+with a NUL. Reads can be short, and conversion can expand an input byte into
+two output bytes.
+.SH RETURN VALUE
+Size, raw, restore and nonblock return 0 on success, or -1 with errno set.
+hu_terminal_read returns the number of output bytes, 0 at end of input, or -1
+with errno set. EAGAIN and EINTR retain their usual read meanings.
+Invalid arguments or unavailable dimensions produce EINVAL.
+.SH EXAMPLE
+This routine prints one native key sequence as hexadecimal bytes and restores
+the terminal. A full event loop must also arrange restoration on cancellation.
+.EX
+#include <termios.h>
+#include <helios/unix/api.h>
+#include <stdio.h>
+#include <errno.h>
+
+int show_key(void)
+{
+    struct termios saved;
+    struct hu_terminal_decoder decoder = {0, 1};
+    char bytes[32];
+    int n, i, error;
+    if (hu_terminal_raw(0, &saved) < 0) return -1;
+    do {
+        n = hu_terminal_read(0, &decoder, bytes, sizeof(bytes));
+    } while (n < 0 && errno == EINTR);
+    error = errno;
+    if (hu_terminal_restore(0, &saved) < 0) return -1;
+    if (n < 0) { errno = error; return -1; }
+    for (i = 0; i < n; ++i)
+        printf("%02x ", (unsigned char)bytes[i]);
+    putchar('\en');
+    return 0;
+}
+.EE
+.SH SEE ALSO
+helios-unix(7), hu_poll(3)
