@@ -10,7 +10,7 @@ import os,re,socket,subprocess,threading,shutil,time,tempfile
 ROOT=Path(__file__).resolve().parents[2]
 
 def main():
-    sdk=ROOT/'ktm-distribution/work/sp1/prod/TRAN'
+    sdk=ROOT/'ktm-distribution/work/sdk/prod/TRAN'
     probe=ROOT/'ktm-distribution/work/compat/bin/io'
     base=Path(os.environ.get('HELIOS_TEST_BASE',str(ROOT/'t4-root')))
     if not probe.is_file() or not (sdk/'lib/Posix').is_file():

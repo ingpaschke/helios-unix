@@ -4,7 +4,7 @@ from pathlib import Path
 ROOT=Path(__file__).resolve().parents[2]
 ap=argparse.ArgumentParser(description=__doc__)
 ap.add_argument('--stage',type=Path,default=ROOT/'ktm-distribution/work/compat/stage')
-ap.add_argument('--sdk',type=Path,default=ROOT/'ktm-distribution/work/sp1/prod/TRAN')
+ap.add_argument('--sdk',type=Path,default=ROOT/'ktm-distribution/work/sdk/prod/TRAN')
 ap.add_argument('--hcc',type=Path,default=Path('/opt/llvm-t800/bin/hcc'))
 args=ap.parse_args()
 inc=[args.stage/'include/helios-unix/compat',args.stage/'include/helios-unix',args.sdk/'include']

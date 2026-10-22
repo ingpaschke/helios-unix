@@ -28,14 +28,14 @@ the machine-readable feature profile.
 
 ## Build and use
 
-Requirements are a Helios-NG SDK with resident Posix version 1001 and the
+Requirements are a Helios-NG 1.31-SP2 SDK with resident Posix version 1001 and the
 matching `hu-spawn.h`, the llvm-t800 compiler, and the Helios assembler.
 FIFO channels require the native FIFO server with readiness support.
 Host-offloaded TLS additionally requires an I/O server built with `IOS_TLS=1`.
 
 The distribution build recipe produces the archive, headers and resolver
 helper. With sibling `helios-unix`, `Helios-NG` and `ktm-distribution`
-checkouts, and the SDK built under `ktm-distribution/work/sp1`, run from
+checkouts, and the SDK built under `ktm-distribution/work/sdk`, run from
 their parent directory:
 
 ```sh
