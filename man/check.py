@@ -18,7 +18,7 @@ def main():
     args = parser.parse_args()
     if any((args.clang, args.sdk, args.stage)) and not all((args.clang, args.sdk, args.stage)):
         parser.error('--clang, --sdk and --stage must be supplied together')
-    pages = sorted(ROOT.glob('man[37]/*.[37]'))
+    pages = sorted(ROOT.glob('man[137]/*.[137]'))
     examples = 0
     env = dict(os.environ, LC_ALL='C', GROFF_NO_SGR='1', SOURCE_DATE_EPOCH='0')
     with tempfile.TemporaryDirectory(prefix='hu-man-') as temporary:

@@ -24,7 +24,7 @@
   "tls_default_backend": "host-offload; requires optional /internet HTL1",
   "tls_native_crypto": false,
   "tls_legacy_fd_adapter": true,
-  "ssh_client": "hu_ssh session/provider API v1",
+  "ssh_client": "hu_ssh session/provider API v1; native ssh command",
   "ssh_default_backend": "host-offload; optional /internet HSH1 controls",
   "ssh_native_crypto": false,
   "ssh_authentication": [

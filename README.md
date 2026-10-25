@@ -17,7 +17,7 @@ for programs running on Transputers.
   for event loops. The supplied provider uses the Linux I/O server's optional
   TLS service.
 - SSH sessions with a provider interface, terminal resizing, password and
-  private-key authentication. The supplied provider
+  private-key authentication, and a native `ssh` command. The supplied provider
   uses the Linux I/O server's optional SSH service.
 
 The library does not implement Unix `fork`, pthreads or shared memory, and
@@ -56,6 +56,8 @@ order:
 Link `helios-unix.lib` before `bsd.lib`, `c.lib` and `helios.lib`. The generated
 `lib/helios-unix-flags.json` records include order and compiler definitions.
 Install the resolver helper at `/helios/lib/hu-resolve` for asynchronous lookup.
+The distribution stages the SSH client at `/helios/bin/ssh`; use
+`ssh user@host` or `ssh -p 2222 user@host command`.
 Use the same header profile for the application and its dependencies.
 
 ## Manuals
@@ -63,7 +65,7 @@ Use the same header profile for the application and its dependencies.
 Start with `man 7 helios-unix`. The section 3 pages cover `hu_spawn`,
 `hu_channel`, `hu_poll`, `getaddrinfo`, `hu_resolve`, `hu_terminal`, `hu_tls`,
 `hu_tls_fd`, `glob` and `mkstemp`, including examples and ownership rules.
-`hu_ssh(3)` documents the session/provider API.
+`ssh(1)` documents the client and `hu_ssh(3)` documents the session/provider API.
 Individual function names work too, for example `man hu_tls_attach_fd`.
 The distribution's manual build installs both source and preformatted pages
 for the native `man` reader and Xman.

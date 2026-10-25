@@ -1,0 +1,70 @@
+.TH SSH 1 "" "Helios" "User commands"
+.SH NAME
+ssh \- log into another machine using SSH
+.SH SYNOPSIS
+.B ssh
+.RB [ \-t | \-T ]
+.RB [ \-p " port" ]
+.RB [ \-l " user" ]
+.RB [ \-i " private-key" ]
+.RB [ \-K " hosts-file" ]
+.RI [ user @] host
+.RI [ command " ..."]
+.SH DESCRIPTION
+The native Helios client connects to an SSH server and opens a remote shell
+or executes a command. The supplied provider performs SSH negotiation and
+cryptography in a worker inside the Linux I/O server. The host must have
+SSH support enabled; the client never falls back to an unencrypted login.
+.PP
+Without a command, a terminal is requested when standard input is a terminal.
+Its TERM, rows and columns are sent to the server. Window changes are forwarded
+on SIGWINCH. Input is put in raw mode and restored when the client exits;
+Ctrl-C is passed to the remote terminal. Nonterminal input supports file
+redirection and EOF. Remote stdout and stderr are merged by this provider.
+.PP
+For an interactive xterm, the client queries its character encoding, enables
+UTF-8 for the remote session and restores the previous encoding on exit.
+Terminals without the encoding query remain unchanged. Redirected output is
+not modified with terminal control sequences.
+.SH OPTIONS
+.TP
+.B \-t
+Request a remote terminal, including for a command or redirected input.
+.TP
+.B \-T
+Do not request a remote terminal.
+.TP
+.BI \-p " port"
+Connect to this port instead of 22.
+.TP
+.BI \-l " user"
+Remote account name. user@host takes precedence. The default is USER or LOGNAME.
+.TP
+.BI \-i " private-key"
+Read the private key from a Helios file, at most 8192 bytes. The client prompts
+for its passphrase; press Return for an unencrypted key. If key authentication
+fails and the server offers passwords, the client can try a password.
+.TP
+.BI \-K " hosts-file"
+Use this host-key file instead of $HOME/.ssh/hosts.
+.SH HOST KEYS AND AUTHENTICATION
+The client shows an unknown host's key type and SHA-256 fingerprint and asks
+whether to remember it. Answer yes to append the entry. A changed key is
+rejected. This client's hosts file is plain text with hostname, port, key type
+and fingerprint on each line; it is separate from OpenSSH's known_hosts format.
+.PP
+Password prompts disable terminal echo. Public-key and password authentication
+are supported; keyboard-interactive authentication, agent forwarding, SFTP,
+port forwarding, X11 forwarding and OpenSSH configuration files are not
+implemented in this version.
+.SH EXIT STATUS
+The remote command's exit status, or 255 for a connection, authentication or
+local error. Usage errors return 2.
+.SH EXAMPLES
+.nf
+ssh alice@server
+ssh -p 2222 -i /helios/users/alice/.ssh/id_ed25519 alice@server
+ssh alice@server uname -a
+.fi
+.SH SEE ALSO
+hu_ssh(3), hu_terminal(3), helios-unix(7)
