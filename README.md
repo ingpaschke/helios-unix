@@ -16,6 +16,9 @@ for programs running on Transputers.
 - TLS client connections with a provider interface and a descriptor adapter
   for event loops. The supplied provider uses the Linux I/O server's optional
   TLS service.
+- SSH sessions with a provider interface, terminal resizing, password and
+  private-key authentication. The supplied provider
+  uses the Linux I/O server's optional SSH service.
 
 The library does not implement Unix `fork`, pthreads or shared memory, and
 is not a complete POSIX implementation. Calls use the application thread.
@@ -32,6 +35,7 @@ Requirements are a Helios-NG 1.31-SP2 SDK with resident Posix version 1001 and t
 matching `hu-spawn.h`, the llvm-t800 compiler, and the Helios assembler.
 FIFO channels require the native FIFO server with readiness support.
 Host-offloaded TLS additionally requires an I/O server built with `IOS_TLS=1`.
+Host-offloaded SSH requires `IOS_SSH=1` and libssh2 on the I/O-server host.
 
 The distribution build recipe produces the archive, headers and resolver
 helper. With sibling `helios-unix`, `Helios-NG` and `ktm-distribution`
@@ -59,6 +63,7 @@ Use the same header profile for the application and its dependencies.
 Start with `man 7 helios-unix`. The section 3 pages cover `hu_spawn`,
 `hu_channel`, `hu_poll`, `getaddrinfo`, `hu_resolve`, `hu_terminal`, `hu_tls`,
 `hu_tls_fd`, `glob` and `mkstemp`, including examples and ownership rules.
+`hu_ssh(3)` documents the session/provider API.
 Individual function names work too, for example `man hu_tls_attach_fd`.
 The distribution's manual build installs both source and preformatted pages
 for the native `man` reader and Xman.
@@ -89,6 +94,7 @@ UndefinedBehaviorSanitizer support:
 python3 tests/host/run_tls.py
 python3 tests/host/run_glob.py
 python3 tests/host/run_poll.py
+python3 tests/host/run_ssh.py
 ```
 
 The TLS test uses a mock provider to check the API contract; it does not test

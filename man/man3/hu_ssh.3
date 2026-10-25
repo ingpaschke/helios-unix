@@ -1,0 +1,82 @@
+.TH HU_SSH 3 "" "helios-unix" "Library functions"
+.SH NAME
+hu_ssh_open, hu_ssh_open_fd, hu_ssh_status, hu_ssh_trust, hu_ssh_authenticate, hu_ssh_resize, hu_ssh_read, hu_ssh_write, hu_ssh_send_eof, hu_ssh_interest, hu_ssh_wait_fd, hu_ssh_close \- use an SSH session
+.SH SYNOPSIS
+.nf
+#include <helios/unix/ssh.h>
+
+struct hu_ssh *hu_ssh_open(const struct hu_ssh_backend *backend,
+    const struct hu_ssh_options *options,
+    const struct hu_ssh_transport *transport);
+struct hu_ssh *hu_ssh_open_fd(const struct hu_ssh_options *, int fd);
+int hu_ssh_status(struct hu_ssh *, struct hu_ssh_info *);
+int hu_ssh_trust(struct hu_ssh *, int accept);
+int hu_ssh_authenticate(struct hu_ssh *, const struct hu_ssh_auth *);
+int hu_ssh_resize(struct hu_ssh *, unsigned columns, unsigned rows);
+int hu_ssh_read(struct hu_ssh *, void *, unsigned);
+int hu_ssh_write(struct hu_ssh *, const void *, unsigned);
+int hu_ssh_send_eof(struct hu_ssh *);
+int hu_ssh_interest(struct hu_ssh *, int operation, struct hu_ssh_wait *);
+int hu_ssh_wait_fd(struct hu_ssh *);
+void hu_ssh_close(struct hu_ssh *);
+.fi
+.SH DESCRIPTION
+This interface describes an SSH session independently of where the SSH engine
+runs. A provider can implement the protocol over byte callbacks or offload it
+to a host. No native Transputer crypto provider is included.
+.PP
+options supplies host, user, port, terminal, optional command, initial columns
+and rows, pty, timeout_ms and optional provider configuration. The default
+provider accepts hosts up to 255 bytes, users and terminal names up to 63,
+commands up to 767, and timeouts of 100..120000 milliseconds.
+Keep options and its strings valid until close for providers that borrow them.
+.SS Ownership
+Open returns an object or NULL with errno set. A successful open takes
+ownership of the transport; a failed open leaves it with the caller.
+The callback table and context must outlive the object. ssh_backend.h defines
+the provider and transport interfaces. A native engine needs read, write and
+a select-compatible wait descriptor, and does not require transport controls.
+.PP
+open_fd is a convenience adapter for an already connected TCP descriptor.
+It makes the descriptor nonblocking and takes ownership on success only.
+Use the object for I/O afterward; do not close its descriptor separately.
+.SS Connection and authentication
+Call status to drive and inspect negotiation. States are CONNECTING, HOSTKEY,
+AUTH, OPENING, READY, CLOSED and FAILED, with the HU_SSH_ prefix.
+At HOSTKEY, inspect key_type and fingerprint, then explicitly call trust.
+At AUTH, inspect auth_methods and supply HU_SSH_PASSWORD or HU_SSH_PUBLICKEY
+with authenticate. secret is the password or private-key passphrase; key and
+key_size contain private-key data for public-key authentication (at most
+HU_SSH_MAX_KEY bytes). auth_attempt increments after unsuccessful attempts.
+The supplied provider copies credentials before authenticate returns.
+.PP
+status also supplies a diagnostic message and provider error. At CLOSED,
+exit_valid indicates whether exit_status is available. Drain pending output
+even if status already reports CLOSED.
+.SS I/O and event loops
+Read and write return byte counts, or -1 with errno set. Read returns zero at
+EOF. Handle short writes and retry EAGAIN/EINTR without losing unaccepted data.
+The supplied terminal provider merges remote stdout and stderr.
+.PP
+interest supplies the transport descriptor, readiness events and timeout_ms
+for HU_SSH_READ, HU_SSH_WRITE or HU_SSH_PROGRESS. Events are HU_SSH_WAIT_READ
+and HU_SSH_WAIT_WRITE. A read can need writability and a write can need
+readability in a native engine. A negative timeout means no timer; zero means
+retry immediately. Wait for the requested readiness or timer, then retry the
+operation (status for progress). An object belongs to one application thread.
+.PP
+resize sends new columns and rows for an established remote terminal.
+Call it from the event loop after SIGWINCH, not inside the signal handler.
+send_eof half-closes input after accepted writes have drained; output remains
+readable. close cancels the session and frees its engine and owned transport
+exactly once. NULL is accepted. It does not wait for the remote program.
+.SH PROVIDERS
+The default uses the Linux I/O server's optional HSH1 SSH service. Control
+framing is private to its transport adapter. Native providers use the same
+application interface and may use configuration for engine-specific services.
+HU_SSH_DEFAULT_BACKEND can select another provider when building the library.
+.SH RETURN VALUE
+Open returns an object or NULL. I/O returns bytes, EOF or -1. Other calls
+return 0 or -1 with errno set, except wait_fd, which returns the descriptor.
+.SH SEE ALSO
+ssh(1), hu_tls(3), hu_terminal(3), helios-unix(7)
