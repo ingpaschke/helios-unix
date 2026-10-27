@@ -11,5 +11,7 @@ struct hu_pollfd {int fd;short events,revents;};
 #define HU_POLLERR 8
 #define HU_POLLHUP 16
 #define HU_POLLNVAL 32
+/* SOL_IOCTL query implemented by the Internet socket service. */
+#define HU_SOCKET_POLL_EVENTS 0x4004687fUL
 int hu_poll(struct hu_pollfd *,unsigned,int);
 #endif

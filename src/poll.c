@@ -17,7 +17,7 @@ static int status(Stream *s,int fd,int *value)
 {
     if((s->Type & ~Type_Flags)==Type_Socket) {
         int size=sizeof(*value);
-        return getsockopt(fd,SOL_IOCTL,0x4004687f,value,&size);
+        return getsockopt(fd,SOL_IOCTL,HU_SOCKET_POLL_EVENTS,value,&size);
     }
     if((s->Type & ~Type_Flags)==(Type_Fifo & ~Type_Flags)) {
         MCB m;word data[2],rc;Port reply=NewPort();
