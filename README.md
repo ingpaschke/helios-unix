@@ -104,6 +104,7 @@ python3 tests/host/run_tls.py
 python3 tests/host/run_glob.py
 python3 tests/host/run_poll.py
 python3 tests/host/run_ssh.py
+python3 tests/host/run_ssh_terminal.py
 ```
 
 The TLS test uses a mock provider to check the API contract; it does not test

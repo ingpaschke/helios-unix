@@ -9,9 +9,14 @@ int hu_terminal_read(int fd,struct hu_terminal_decoder *d,char *out,int size)
 int hu_terminal_restore(int fd,const struct termios *t)
 {return tcsetattr(fd,TCSANOW,t);}
 
-int main(void)
+int main(int argc,char **argv)
 {
     struct termios t;struct hu_terminal_decoder d={0,0};char input[128];int n,i;
+    if(argc>1){
+        char answer[8];
+        if(prompt("test: ",answer,sizeof(answer),1)<0)return 2;
+        fputs(answer,stdout);return 0;
+    }
     assert(tcgetattr(0,&t)==0);cfmakeraw(&t);assert(tcsetattr(0,TCSANOW,&t)==0);
     signal(SIGTERM,interrupt);
     n=terminal_encoding(&d,input,sizeof(input));

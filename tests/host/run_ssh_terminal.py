@@ -66,4 +66,13 @@ with tempfile.TemporaryDirectory(prefix='ssh-terminal-') as name:
     check(b'abc', -1, '616263')
     check(None, -1, term='vt100')
     check(None, -1, redirected=True)
+    for data,expected in [(b'short\n',b'short'),(b'short',b'short'),
+                          (b'1234567',b'1234567'),(b'1234567\n',b'1234567'),
+                          (b'\n',b'')]:
+        result=subprocess.run([str(binary),'prompt'],input=data,capture_output=True,timeout=3)
+        assert result.returncode==0 and result.stdout==expected,(data,result)
+    for data in (b'',b'12345678',b'12345678\n'):
+        result=subprocess.run([str(binary),'prompt'],input=data,capture_output=True,timeout=3)
+        assert result.returncode!=0,(data,result)
 print('PASS SSH encoding: Latin-1/UTF-8 restore, fragmented replies, typeahead, unsupported terminals and redirection')
+print('PASS SSH prompts: final EOF line, full buffer, empty password and overlong input')

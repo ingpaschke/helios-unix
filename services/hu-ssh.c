@@ -39,14 +39,19 @@ static void pause_ms(unsigned ms)
 {struct timeval t;t.tv_sec=ms/1000;t.tv_usec=(ms%1000)*1000;select(0,NULL,NULL,NULL,&t);}
 static int prompt(const char *message,char *out,unsigned size,int secret)
 {
-    struct termios old,t;int hidden=0;size_t n;
-    if(interrupted)return -1;
+    struct termios old,t;int hidden=0,too_long=0;size_t n;
+    if(interrupted || size<2)return -1;
     fputs(message,stderr);fflush(stderr);
     if(secret && tcgetattr(0,&old)==0){t=old;t.c_lflag&=~ECHO;hidden=tcsetattr(0,TCSANOW,&t)==0;}
     if(!fgets(out,size,stdin)){if(hidden)tcsetattr(0,TCSANOW,&old);return -1;}
-    if(hidden){tcsetattr(0,TCSANOW,&old);fputc('\n',stderr);}
     n=strlen(out);
-    if(!n || (out[n-1]!='\n' && !feof(stdin))){fprintf(stderr,"ssh: input too long\n");return -1;}
+    if(n==size-1 && out[n-1]!='\n'){
+        int tail=fgetc(stdin);
+        if(tail!='\n' && tail!=EOF)too_long=1;
+    }
+    if(hidden){tcsetattr(0,TCSANOW,&old);fputc('\n',stderr);}
+    if(too_long){fprintf(stderr,"ssh: input too long\n");return -1;}
+    if(ferror(stdin))return -1;
     while(n && (out[n-1]=='\n'||out[n-1]=='\r'))out[--n]=0;
     return interrupted?-1:0;
 }
