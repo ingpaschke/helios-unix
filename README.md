@@ -37,16 +37,23 @@ FIFO channels require the native FIFO server with readiness support.
 Host-offloaded TLS additionally requires an I/O server built with `IOS_TLS=1`.
 Host-offloaded SSH requires `IOS_SSH=1` and libssh2 on the I/O-server host.
 
-The distribution build recipe produces the archive, headers and resolver
-helper. With sibling `helios-unix`, `Helios-NG` and `ktm-distribution`
-checkouts, and the SDK built under `ktm-distribution/work/sdk`, run from
-their parent directory:
+The common builder produces the archive, headers and runtime helpers without
+requiring a distribution checkout. Select the CPU explicitly and use separate
+work directories for different targets:
 
 ```sh
-HELIOS_NG_ROOT="$PWD/Helios-NG" python3 ktm-distribution/build_compat.py
+python3 build.py --cpu t425 --work work/t425 \
+  --sdk /path/to/sdk/prod/TRAN --asm /path/to/sdk/host/bin/asm \
+  --helios-ng /path/to/Helios-NG
 ```
 
-The staged SDK is `ktm-distribution/work/compat/stage`. Use headers in this
+Use `--cpu t800` for T800/T805 builds. `--toolchain` selects llvm-t800;
+`--tests` also compiles the native regression programs. The matching Helios-NG
+source supplies the private DNS resolver header used by the native adapter.
+`build.py verify` with the same options checks the input fingerprint and all
+staged files. CPU and test selection are part of that fingerprint.
+
+The staged SDK is `WORK/stage`. Use headers in this
 order:
 
 1. `include/helios-unix/compat` for the opt-in compatibility definitions.
