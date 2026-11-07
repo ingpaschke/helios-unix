@@ -52,6 +52,9 @@ Use `--cpu t800` for T800/T805 builds. `--toolchain` selects llvm-t800;
 source supplies the private DNS resolver header used by the native adapter.
 `build.py verify` with the same options checks the input fingerprint and all
 staged files. CPU and test selection are part of that fingerprint.
+The fingerprint includes the Clang executable selected by `hcc` and its
+`HCC_*` environment settings. Compatibility header templates are under
+`templates/compat`; the builder stages them beside the native SDK headers.
 
 The staged SDK is `WORK/stage`. Use headers in this
 order:
@@ -105,6 +108,7 @@ python3 tests/host/run_glob.py
 python3 tests/host/run_poll.py
 python3 tests/host/run_ssh.py
 python3 tests/host/run_ssh_terminal.py
+python3 tests/test_build.py
 ```
 
 The TLS test uses a mock provider to check the API contract; it does not test

@@ -3,6 +3,7 @@
 import argparse
 import hashlib
 import json
+import os
 from pathlib import Path
 import shutil
 import subprocess
@@ -29,8 +30,8 @@ class UnixBuild:
 
     def input_id(self):
         files = [Path(__file__), self.helios_ng / 'posix/dns-resolver.h',
-                 self.hcc, self.asm, self.runtime]
-        files += [p for directory in ['src', 'include', 'services', 'docs']
+                 self.hcc, self.compiler(), self.asm, self.runtime]
+        files += [p for directory in ['src', 'include', 'services', 'docs', 'templates']
                   for p in (ROOT / directory).rglob('*') if p.is_file()]
         files += [ROOT / 'capabilities.json', ROOT / 'LICENSE']
         if self.tests:
@@ -38,10 +39,35 @@ class UnixBuild:
         files += [p for p in (self.sdk / 'include').rglob('*') if p.is_file()]
         files += [self.sdk / 'lib' / n for n in
                   ['c0.o', 'c.lib', 'bsd.lib', 'helios.lib', 'posix.def', 'Posix', 'Clib']]
-        value = hashlib.sha256(json.dumps({'cpu': self.cpu, 'tests': self.tests}).encode())
+        settings = {
+            'cpu': self.cpu,
+            'tests': self.tests,
+            # hcc's compiler selection, optimisation and extra flags are inputs
+            # even when neither its driver nor the SDK files have changed.
+            'environment': {key: value for key, value in os.environ.items()
+                            if key.startswith('HCC_')},
+        }
+        value = hashlib.sha256(json.dumps(settings, sort_keys=True).encode())
         for p in sorted(set(files)):
-            value.update(str(p).encode()); value.update(p.read_bytes())
+            value.update(str(p).encode() + b'\0')
+            value.update(bytes.fromhex(digest(p)))
         return value.hexdigest()
+
+    def compiler(self):
+        """Resolve the same compiler that the hcc driver will execute."""
+        configured = os.environ.get('HCC_CLANG')
+        if configured:
+            selected = shutil.which(configured)
+        else:
+            directory = self.hcc.resolve().parent
+            candidates = [directory / 'clang', directory / '../../../build/bin/clang']
+            selected = next((str(path) for path in candidates
+                             if path.is_file() and os.access(path, os.X_OK)), None)
+            if selected is None:
+                selected = shutil.which('clang')
+        if selected is None:
+            raise RuntimeError('Clang not found; set HCC_CLANG or select a toolchain')
+        return Path(selected).resolve()
 
     def validate(self):
         info = json.loads((self.work / 'build-info.json').read_text())
@@ -54,9 +80,11 @@ class UnixBuild:
         return info
 
     def run(self, args, name):
-        logs = self.work / 'logs'; logs.mkdir(parents=True, exist_ok=True)
+        logs = self.work / 'logs'
+        logs.mkdir(parents=True, exist_ok=True)
         with (logs / (name + '.log')).open('w') as output:
-            output.write(json.dumps(list(map(str, args))) + '\n'); output.flush()
+            output.write(json.dumps(list(map(str, args))) + '\n')
+            output.flush()
             subprocess.run(list(map(str, args)), stdout=output,
                            stderr=subprocess.STDOUT, check=True)
 
@@ -71,6 +99,8 @@ class UnixBuild:
         return out.with_suffix('.o')
 
     def build(self):
+        if os.environ.get('HCC_DRYRUN'):
+            raise RuntimeError('HCC_DRYRUN cannot produce a helios-unix build')
         try:
             return self.validate()
         except (OSError, ValueError, KeyError, RuntimeError):
@@ -78,30 +108,14 @@ class UnixBuild:
         inputs = self.input_id()
         (self.work / 'build-info.json').unlink(missing_ok=True)
         for folder in [self.stage, self.work / 'bin']:
-            if folder.exists(): shutil.rmtree(folder)
+            if folder.exists():
+                shutil.rmtree(folder)
         for name in ['obj', 'bin', 'stage/bin', 'stage/lib', 'stage/include/helios-unix']:
             (self.work / name).mkdir(parents=True, exist_ok=True)
         objects = [self.compile(p, p.stem) for p in sorted((ROOT / 'src').glob('*.c'))]
         archive = self.stage / 'lib/helios-unix.lib'
         self.run([self.asm, '-p', '-o', archive, *objects, self.sdk / 'lib/posix.def'], 'archive')
-        headers = self.stage / 'include/helios-unix'
-        shutil.copytree(ROOT / 'include', headers, dirs_exist_ok=True)
-        overlay = headers / 'compat'
-        for name in ['unistd.h', 'stdlib.h', 'netdb.h', 'sys/socket.h']:
-            destination = overlay / 'native' / name
-            destination.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copyfile(self.sdk / 'include' / name, destination)
-            path = overlay / name; path.parent.mkdir(parents=True, exist_ok=True)
-            guard = 'HU_OVERLAY_' + name.upper().replace('/', '_').replace('.', '_')
-            text = '#ifndef ' + guard + '\n#define ' + guard + '\n#include "native/' + name + '"\n'
-            if name == 'unistd.h':
-                text += ('\n#undef fork\n#define fork(...) ((int)sizeof(char[-1])) /* use spawn; native fork is vfork */\n'
-                         '#ifndef HU_ENABLE_NATIVE_VFORK\n#define vfork(...) ((int)sizeof(char[-1]))\n#endif\n')
-            elif name == 'stdlib.h': text += 'int mkstemp(char *);\n'
-            elif name == 'netdb.h': text += '#include <helios/unix/netdb.h>\n'
-            elif name == 'sys/socket.h': text += '#ifndef HU_SOCKLEN_T\n#define HU_SOCKLEN_T\ntypedef unsigned int socklen_t;\n#endif\n'
-            path.write_text(text + '#endif\n')
-        (overlay / 'glob.h').write_text('#include <helios/unix/glob.h>\n')
+        self.stage_headers()
         (self.stage / 'lib/helios-unix-flags.json').write_text(json.dumps({
             'cpu': self.cpu, 'include_order': ['/helios/include/helios-unix/compat',
                 '/helios/include/helios-unix', '/helios/include'],
@@ -110,7 +124,8 @@ class UnixBuild:
             'fork': False, 'poll': 'hu_poll', 'threads': 'application-thread API profile'
         }, indent=2) + '\n')
         programs = list((ROOT / 'services').glob('*.c'))
-        if self.tests: programs += list((ROOT / 'tests').glob('*.c'))
+        if self.tests:
+            programs += list((ROOT / 'tests').glob('*.c'))
         for source in sorted(programs):
             obj = self.compile(source, 'program-' + source.stem)
             self.run([self.asm, '-o', self.work / 'bin' / source.stem,
@@ -122,12 +137,23 @@ class UnixBuild:
         shutil.copyfile(ROOT / 'capabilities.json', self.stage / 'lib/helios-unix-capabilities.json')
         shutil.copytree(ROOT / 'docs', self.stage / 'local/share/helios-unix')
         shutil.copyfile(ROOT / 'LICENSE', self.stage / 'local/share/helios-unix/COPYING')
-        if self.input_id() != inputs: raise RuntimeError('helios-unix inputs changed during build')
+        if self.input_id() != inputs:
+            raise RuntimeError('helios-unix inputs changed during build')
         info = {'abi': 1, 'version': '0.1-dev', 'cpu': self.cpu, 'input_id': inputs,
                 'files': {str(p.relative_to(self.stage)): digest(p)
                           for p in self.stage.rglob('*') if p.is_file()}}
         (self.work / 'build-info.json').write_text(json.dumps(info, indent=2) + '\n')
         return self.validate()
+
+    def stage_headers(self):
+        headers = self.stage / 'include/helios-unix'
+        shutil.copytree(ROOT / 'include', headers, dirs_exist_ok=True)
+        overlay = headers / 'compat'
+        shutil.copytree(ROOT / 'templates/compat', overlay, dirs_exist_ok=True)
+        for name in ['unistd.h', 'stdlib.h', 'netdb.h', 'sys/socket.h']:
+            destination = overlay / 'native' / name
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(self.sdk / 'include' / name, destination)
 
 
 def main():
@@ -142,8 +168,10 @@ def main():
     ap.add_argument('--tests', action='store_true', help='also build native regression programs')
     args = ap.parse_args()
     build = UnixBuild(args.work, args.sdk, args.asm, args.helios_ng, args.toolchain, args.cpu, args.tests)
-    if args.command == 'verify': build.validate()
-    else: build.build()
+    if args.command == 'verify':
+        build.validate()
+    else:
+        build.build()
     print(build.stage)
 
 
