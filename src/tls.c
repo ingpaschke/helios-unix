@@ -8,6 +8,7 @@
 #define HU_TLS_DEFAULT_BACKEND hu_tls_offload_backend
 #endif
 extern const struct hu_tls_backend HU_TLS_DEFAULT_BACKEND;
+
 struct hu_tls {
     const struct hu_tls_backend *backend;
     struct hu_tls_options options;
@@ -15,151 +16,301 @@ struct hu_tls {
     void *engine;
     char peer[256];
     unsigned state;
-    int want[5],failure,closing;
+    int want[5], failure, closing;
     struct timeval started;
 };
-static int remaining(struct hu_tls *t)
+
+static int remaining(struct hu_tls *tls)
 {
-    struct timeval now;long elapsed;
-    gettimeofday(&now,0);
-    elapsed=(now.tv_sec-t->started.tv_sec)*1000+(now.tv_usec-t->started.tv_usec)/1000;
-    if(elapsed<0)elapsed=0;
-    return elapsed>=(long)t->options.timeout_ms?0:t->options.timeout_ms-elapsed;
-}
-static int failed(struct hu_tls *t,int error)
-{t->state=HU_TLS_FAILED;t->failure=error?error:EIO;errno=t->failure;return -1;}
-struct hu_tls *hu_tls_create(const struct hu_tls_backend *b,const void *config,const char *peer,unsigned timeout)
-{
-    struct hu_tls *t;
-    if(!b)b=&HU_TLS_DEFAULT_BACKEND;
-    if(!peer || !*peer || strlen(peer)>255 || timeout<100 || timeout>120000 ||
-       b->version!=1 || !b->create || !b->handshake || !b->read || !b->write ||
-       !b->pending || !b->shutdown || !b->timer_ms || !b->info || !b->destroy) {
-        errno=EINVAL;return NULL;
+    struct timeval now;
+    long elapsed;
+    gettimeofday(&now, 0);
+    elapsed = (now.tv_sec - tls->started.tv_sec) * 1000 +
+              (now.tv_usec - tls->started.tv_usec) / 1000;
+    if (elapsed < 0) {
+        elapsed = 0;
     }
-    t=calloc(1,sizeof(*t));if(!t){errno=ENOMEM;return NULL;}
-    strcpy(t->peer,peer);t->options.peer=t->peer;t->options.timeout_ms=timeout;
-    t->options.configuration=config;t->backend=b;t->state=HU_TLS_NEGOTIATING;
-    t->want[HU_TLS_READ]=HU_TLS_WAIT_READ;t->want[HU_TLS_WRITE]=HU_TLS_WAIT_WRITE;
-    return t;
+    return elapsed >= (long)tls->options.timeout_ms ? 0
+                                                    : tls->options.timeout_ms - elapsed;
 }
-int hu_tls_attach(struct hu_tls *t,const struct hu_tls_transport *transport)
+
+static int failed(struct hu_tls *tls, int error)
 {
-    if(!t || t->engine || !transport || !transport->ops || !transport->ops->read ||
-       !transport->ops->write || !transport->ops->wait_fd || !transport->ops->close) {
-        errno=EINVAL;return -1;
+    tls->state = HU_TLS_FAILED;
+    tls->failure = error ? error : EIO;
+    errno = tls->failure;
+    return -1;
+}
+
+struct hu_tls *hu_tls_create(const struct hu_tls_backend *backend, const void *config,
+                             const char *peer, unsigned timeout)
+{
+    struct hu_tls *tls;
+    if (!backend) {
+        backend = &HU_TLS_DEFAULT_BACKEND;
     }
-    t->transport=*transport;
-    t->engine=t->backend->create(&t->options,&t->transport);
-    if(!t->engine){memset(&t->transport,0,sizeof(t->transport));return -1;}
-    gettimeofday(&t->started,0);return 0;
+    if (!peer || !*peer || strlen(peer) > 255 || timeout < 100 || timeout > 120000 ||
+        backend->version != 1 || !backend->create || !backend->handshake ||
+        !backend->read || !backend->write || !backend->pending || !backend->shutdown ||
+        !backend->timer_ms || !backend->info || !backend->destroy) {
+        errno = EINVAL;
+        return NULL;
+    }
+    tls = calloc(1, sizeof(*tls));
+    if (!tls) {
+        errno = ENOMEM;
+        return NULL;
+    }
+    strcpy(tls->peer, peer);
+    tls->options.peer = tls->peer;
+    tls->options.timeout_ms = timeout;
+    tls->options.configuration = config;
+    tls->backend = backend;
+    tls->state = HU_TLS_NEGOTIATING;
+    tls->want[HU_TLS_READ] = HU_TLS_WAIT_READ;
+    tls->want[HU_TLS_WRITE] = HU_TLS_WAIT_WRITE;
+    return tls;
 }
-int hu_tls_handshake(struct hu_tls *t)
+
+int hu_tls_attach(struct hu_tls *tls, const struct hu_tls_transport *transport)
 {
-    int r;
-    if(!t || !t->engine){errno=EINVAL;return -1;}
-    if(t->state==HU_TLS_READY && !t->closing)return 1;
-    if(t->state!=HU_TLS_NEGOTIATING){errno=t->failure?t->failure:EPIPE;return -1;}
-    if(!remaining(t))return failed(t,ETIMEDOUT);
-    r=t->backend->handshake(t->engine,&t->want[HU_TLS_HANDSHAKE]);
-    if(r<0)return failed(t,errno);
-    if(r>0)t->state=HU_TLS_READY;
-    return r>0?1:0;
+    if (!tls || tls->engine || !transport || !transport->ops || !transport->ops->read ||
+        !transport->ops->write || !transport->ops->wait_fd || !transport->ops->close) {
+        errno = EINVAL;
+        return -1;
+    }
+    tls->transport = *transport;
+    tls->engine = tls->backend->create(&tls->options, &tls->transport);
+    if (!tls->engine) {
+        memset(&tls->transport, 0, sizeof(tls->transport));
+        return -1;
+    }
+    gettimeofday(&tls->started, 0);
+    return 0;
 }
-static int usable(struct hu_tls *t)
+
+int hu_tls_handshake(struct hu_tls *tls)
 {
-    if(!t || !t->engine){errno=EINVAL;return 0;}
-    if(t->state==HU_TLS_FAILED){errno=t->failure;return 0;}
-    if(t->state==HU_TLS_NEGOTIATING){errno=EAGAIN;return 0;}
+    int result;
+    if (!tls || !tls->engine) {
+        errno = EINVAL;
+        return -1;
+    }
+    if (tls->state == HU_TLS_READY && !tls->closing) {
+        return 1;
+    }
+    if (tls->state != HU_TLS_NEGOTIATING) {
+        errno = tls->failure ? tls->failure : EPIPE;
+        return -1;
+    }
+    if (!remaining(tls)) {
+        return failed(tls, ETIMEDOUT);
+    }
+    result = tls->backend->handshake(tls->engine, &tls->want[HU_TLS_HANDSHAKE]);
+    if (result < 0) {
+        return failed(tls, errno);
+    }
+    if (result > 0) {
+        tls->state = HU_TLS_READY;
+    }
+    return result > 0 ? 1 : 0;
+}
+
+static int usable(struct hu_tls *tls)
+{
+    if (!tls || !tls->engine) {
+        errno = EINVAL;
+        return 0;
+    }
+    if (tls->state == HU_TLS_FAILED) {
+        errno = tls->failure;
+        return 0;
+    }
+    if (tls->state == HU_TLS_NEGOTIATING) {
+        errno = EAGAIN;
+        return 0;
+    }
     return 1;
 }
-int hu_tls_read(struct hu_tls *t,void *buf,unsigned n)
+
+int hu_tls_read(struct hu_tls *tls, void *buf, unsigned size)
 {
-    int r;
-    if(!usable(t))return -1;
-    if(!n)return 0;
-    if(!buf){errno=EINVAL;return -1;}
-    if(t->state==HU_TLS_CLOSED)return 0;
-    t->want[HU_TLS_READ]=HU_TLS_WAIT_READ;
-    r=t->backend->read(t->engine,buf,n,&t->want[HU_TLS_READ]);
-    if(r<0 && errno!=EAGAIN && errno!=EWOULDBLOCK && errno!=EINTR)return failed(t,errno);
-    if(!r)t->state=HU_TLS_CLOSED;
-    return r;
+    int result;
+    if (!usable(tls)) {
+        return -1;
+    }
+    if (!size) {
+        return 0;
+    }
+    if (!buf) {
+        errno = EINVAL;
+        return -1;
+    }
+    if (tls->state == HU_TLS_CLOSED) {
+        return 0;
+    }
+    tls->want[HU_TLS_READ] = HU_TLS_WAIT_READ;
+    result = tls->backend->read(tls->engine, buf, size, &tls->want[HU_TLS_READ]);
+    if (result < 0 && errno != EAGAIN && errno != EWOULDBLOCK && errno != EINTR) {
+        return failed(tls, errno);
+    }
+    if (!result) {
+        tls->state = HU_TLS_CLOSED;
+    }
+    return result;
 }
-int hu_tls_write(struct hu_tls *t,const void *buf,unsigned n)
+
+int hu_tls_write(struct hu_tls *tls, const void *buf, unsigned size)
 {
-    int r;
-    if(!usable(t))return -1;
-    if(t->closing || t->state==HU_TLS_CLOSED){errno=EPIPE;return -1;}
-    if(!n)return 0;
-    if(!buf){errno=EINVAL;return -1;}
-    t->want[HU_TLS_WRITE]=HU_TLS_WAIT_WRITE;
-    r=t->backend->write(t->engine,buf,n,&t->want[HU_TLS_WRITE]);
-    if(!r)return failed(t,EPIPE);
-    if(r<0 && errno!=EAGAIN && errno!=EWOULDBLOCK && errno!=EINTR)return failed(t,errno);
-    return r;
+    int result;
+    if (!usable(tls)) {
+        return -1;
+    }
+    if (tls->closing || tls->state == HU_TLS_CLOSED) {
+        errno = EPIPE;
+        return -1;
+    }
+    if (!size) {
+        return 0;
+    }
+    if (!buf) {
+        errno = EINVAL;
+        return -1;
+    }
+    tls->want[HU_TLS_WRITE] = HU_TLS_WAIT_WRITE;
+    result = tls->backend->write(tls->engine, buf, size, &tls->want[HU_TLS_WRITE]);
+    if (!result) {
+        return failed(tls, EPIPE);
+    }
+    if (result < 0 && errno != EAGAIN && errno != EWOULDBLOCK && errno != EINTR) {
+        return failed(tls, errno);
+    }
+    return result;
 }
-unsigned hu_tls_pending(struct hu_tls *t)
-{return t && t->engine && t->state==HU_TLS_READY?t->backend->pending(t->engine):0;}
-int hu_tls_info(struct hu_tls *t,struct hu_tls_info *info)
+
+unsigned hu_tls_pending(struct hu_tls *tls)
 {
-    if(!t || !info){errno=EINVAL;return -1;}
-    memset(info,0,sizeof(*info));if(t->engine)t->backend->info(t->engine,info);
-    info->state=t->state;
-    if(t->failure && !info->message[0]) {
-        strncpy(info->message,strerror(t->failure),sizeof(info->message)-1);
-        info->error=t->failure==ETIMEDOUT?4:t->failure==EACCES?2:1;
+    return tls && tls->engine && tls->state == HU_TLS_READY
+               ? tls->backend->pending(tls->engine)
+               : 0;
+}
+
+int hu_tls_info(struct hu_tls *tls, struct hu_tls_info *info)
+{
+    if (!tls || !info) {
+        errno = EINVAL;
+        return -1;
+    }
+    memset(info, 0, sizeof(*info));
+    if (tls->engine) {
+        tls->backend->info(tls->engine, info);
+    }
+    info->state = tls->state;
+    if (tls->failure && !info->message[0]) {
+        strncpy(info->message, strerror(tls->failure), sizeof(info->message) - 1);
+        info->error = tls->failure == ETIMEDOUT ? 4 : tls->failure == EACCES ? 2 : 1;
     }
     return 0;
 }
-int hu_tls_interest(struct hu_tls *t,int op,struct hu_tls_wait *w)
+
+int hu_tls_interest(struct hu_tls *tls, int op, struct hu_tls_wait *wait)
 {
-    int left;
-    if(!t || !t->engine || !w || op<1 || op>4){errno=EINVAL;return -1;}
-    w->fd=t->transport.ops->wait_fd(t->transport.context);
-    w->events=t->want[op];w->timeout_ms=t->backend->timer_ms(t->engine,op);
-    if(t->state==HU_TLS_FAILED || t->state==HU_TLS_CLOSED ||
-       (op==HU_TLS_READ && hu_tls_pending(t)))w->timeout_ms=0;
-    if(op==HU_TLS_HANDSHAKE) {
-        if(t->state==HU_TLS_READY)w->timeout_ms=0;
-        else {left=remaining(t);if(w->timeout_ms<0 || left<w->timeout_ms)w->timeout_ms=left;}
+    int remaining_ms;
+    if (!tls || !tls->engine || !wait || op < 1 || op > 4) {
+        errno = EINVAL;
+        return -1;
+    }
+    wait->fd = tls->transport.ops->wait_fd(tls->transport.context);
+    wait->events = tls->want[op];
+    wait->timeout_ms = tls->backend->timer_ms(tls->engine, op);
+    if (tls->state == HU_TLS_FAILED || tls->state == HU_TLS_CLOSED ||
+        (op == HU_TLS_READ && hu_tls_pending(tls))) {
+        wait->timeout_ms = 0;
+    }
+    if (op == HU_TLS_HANDSHAKE) {
+        if (tls->state == HU_TLS_READY) {
+            wait->timeout_ms = 0;
+        } else {
+            remaining_ms = remaining(tls);
+            if (wait->timeout_ms < 0 || remaining_ms < wait->timeout_ms) {
+                wait->timeout_ms = remaining_ms;
+            }
+        }
     }
     return 0;
 }
-int hu_tls_wait(struct hu_tls *t,int op,int timeout)
+
+int hu_tls_wait(struct hu_tls *tls, int op, int timeout)
 {
-    struct hu_tls_wait w;fd_set r,s;struct timeval tv;int result;
-    if(timeout< -1){errno=EINVAL;return -1;}
-    if(hu_tls_interest(t,op,&w)<0)return -1;
-    if(w.timeout_ms>=0 && (timeout<0 || w.timeout_ms<timeout))timeout=w.timeout_ms;
-    if(w.fd<0 || w.fd>=FD_SETSIZE){errno=EINVAL;return -1;}
-    FD_ZERO(&r);FD_ZERO(&s);
-    if(w.events&HU_TLS_WAIT_READ)FD_SET(w.fd,&r);
-    if(w.events&HU_TLS_WAIT_WRITE)FD_SET(w.fd,&s);
-    tv.tv_sec=timeout<0?0:timeout/1000;tv.tv_usec=timeout<0?0:timeout%1000*1000;
-    result=select(w.fd+1,&r,&s,NULL,timeout<0?NULL:&tv);
-    if(result<0)return -1;
+    struct hu_tls_wait wait;
+    fd_set readfds, writefds;
+    struct timeval tv;
+    int result;
+    if (timeout < -1) {
+        errno = EINVAL;
+        return -1;
+    }
+    if (hu_tls_interest(tls, op, &wait) < 0) {
+        return -1;
+    }
+    if (wait.timeout_ms >= 0 && (timeout < 0 || wait.timeout_ms < timeout)) {
+        timeout = wait.timeout_ms;
+    }
+    if (wait.fd < 0 || wait.fd >= FD_SETSIZE) {
+        errno = EINVAL;
+        return -1;
+    }
+    FD_ZERO(&readfds);
+    FD_ZERO(&writefds);
+    if (wait.events & HU_TLS_WAIT_READ) {
+        FD_SET(wait.fd, &readfds);
+    }
+    if (wait.events & HU_TLS_WAIT_WRITE) {
+        FD_SET(wait.fd, &writefds);
+    }
+    tv.tv_sec = timeout < 0 ? 0 : timeout / 1000;
+    tv.tv_usec = timeout < 0 ? 0 : timeout % 1000 * 1000;
+    result = select(wait.fd + 1, &readfds, &writefds, NULL, timeout < 0 ? NULL : &tv);
+    if (result < 0) {
+        return -1;
+    }
     /* A provider timer is a reason to retry, not an application timeout. */
-    return result>0 || (w.timeout_ms>=0 && w.timeout_ms==timeout)?1:0;
+    return result > 0 || (wait.timeout_ms >= 0 && wait.timeout_ms == timeout) ? 1 : 0;
 }
-int hu_tls_handshake_wait(struct hu_tls *t)
+
+int hu_tls_handshake_wait(struct hu_tls *tls)
 {
-    int r;
-    while((r=hu_tls_handshake(t))==0)if(hu_tls_wait(t,HU_TLS_HANDSHAKE,-1)<0)return -1;
-    return r<0?-1:0;
+    int result;
+    while ((result = hu_tls_handshake(tls)) == 0) {
+        if (hu_tls_wait(tls, HU_TLS_HANDSHAKE, -1) < 0) {
+            return -1;
+        }
+    }
+    return result < 0 ? -1 : 0;
 }
-int hu_tls_shutdown(struct hu_tls *t)
+
+int hu_tls_shutdown(struct hu_tls *tls)
 {
-    int r;
-    if(!usable(t))return -1;
-    t->closing=1;
-    r=t->backend->shutdown(t->engine,&t->want[HU_TLS_SHUTDOWN]);
-    if(r<0)return failed(t,errno);
-    return r;
+    int result;
+    if (!usable(tls)) {
+        return -1;
+    }
+    tls->closing = 1;
+    result = tls->backend->shutdown(tls->engine, &tls->want[HU_TLS_SHUTDOWN]);
+    if (result < 0) {
+        return failed(tls, errno);
+    }
+    return result;
 }
-void hu_tls_destroy(struct hu_tls *t)
+
+void hu_tls_destroy(struct hu_tls *tls)
 {
-    if(!t)return;
-    if(t->engine){t->backend->destroy(t->engine);t->transport.ops->close(t->transport.context);}
-    free(t);
+    if (!tls) {
+        return;
+    }
+    if (tls->engine) {
+        tls->backend->destroy(tls->engine);
+        tls->transport.ops->close(tls->transport.context);
+    }
+    free(tls);
 }

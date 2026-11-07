@@ -122,7 +122,8 @@ Portable TLS connections
   -1 on failure. hu_tls_handshake_wait provides a bounded synchronous helper.
   Read/write go through the TLS object, never directly through its transport.
   A short write consumes only its returned length. Retry the unconsumed suffix;
-  after EAGAIN preserve the buffer until retry completes. Read returns 0 for
+  after EAGAIN/EWOULDBLOCK preserve the buffer until retry completes. These errno
+  values are distinct on Helios. Read returns 0 for
   authenticated EOF; failures are sticky. No application I/O before READY.
   hu_tls_interest describes the physical fd, READ/WRITE interests and timer for
   each operation. Reads may require WRITE and writes may require READ.

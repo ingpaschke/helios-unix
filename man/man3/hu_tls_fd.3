@@ -42,10 +42,10 @@ non-NULL. Do not blindly close the number: it may already have been released.
 Starting an already attached descriptor fails with EALREADY and leaves that
 existing connection intact. connect with NULL info fails before taking ownership.
 .PP
-Read/write use the TLS byte-count and EAGAIN conventions in hu_tls(3).
+Read/write use the TLS byte-count and EAGAIN/EWOULDBLOCK conventions in hu_tls(3).
 select translates physical TLS interests into requested application readiness,
 including buffered plaintext and provider timers. Readiness means retry I/O;
-it can still return EAGAIN. Native FD_SETSIZE limits apply. There is no TLS
+it can still return EAGAIN or EWOULDBLOCK. Native FD_SETSIZE limits apply. There is no TLS
 urgent-data channel. Use this adapter from one event loop.
 .PP
 close removes the association before descriptor reuse. It gives established

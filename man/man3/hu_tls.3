@@ -49,10 +49,13 @@ hu_tls_handshake_wait drives negotiation synchronously and returns 0 on
 success or -1 on failure. Its deadline includes time between handshake calls.
 .PP
 Read and write return transferred byte counts, or -1 with errno set. Read
-returns 0 at end of stream. Handle short writes. On EAGAIN, obtain interest
+returns 0 at end of stream. Handle short writes. On EAGAIN or EWOULDBLOCK, obtain interest
 for the operation that blocked, wait, then retry. A read can require transport
 writability and a write can require readability. Preserve unaccepted output
 while retrying; advance the buffer only by bytes actually accepted.
+.PP
+Helios assigns different errno values to EAGAIN and EWOULDBLOCK; handle both.
+Retry interrupted operations on EINTR.
 .PP
 hu_tls_interest fills struct hu_tls_wait with fd, events (HU_TLS_WAIT_READ
 and/or HU_TLS_WAIT_WRITE) and timeout_ms (-1 means no provider timer).

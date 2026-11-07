@@ -29,6 +29,13 @@ See [the API contracts](docs/contracts.txt) for ownership, error handling and
 individual interface limits, and [capabilities.json](capabilities.json) for
 the machine-readable feature profile.
 
+The session APIs are in `src/ssh.c` and `src/tls.c`. Their offload providers
+are separate from the byte transports. `src/tls_socket.c` handles the private
+socket controls; `src/tls_fd.c` registers TLS descriptors and translates
+`select` interests. Fixed-record encoders and decoders use `src/wire.h` and
+never overlay native C structures on received bytes. C formatting is defined
+by `.clang-format`.
+
 ## Build and use
 
 Requirements are a Helios-NG 1.31-SP2 SDK with resident Posix version 1001 and the
