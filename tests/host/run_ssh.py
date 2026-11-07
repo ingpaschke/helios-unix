@@ -8,7 +8,7 @@ root = Path(__file__).resolve().parents[2]
 with tempfile.TemporaryDirectory(prefix='hu-ssh-contract-') as name:
     binary = Path(name)/'contract'
     subprocess.run([os.environ.get('CC','cc'), '-std=c99', '-Wall', '-Wextra',
-        '-Werror', '-Wno-misleading-indentation', '-fsanitize=address,undefined',
+        '-Werror',  '-fsanitize=address,undefined',
         '-g', '-I'+str(root/'include'), str(root/'src/ssh.c'),
         str(Path(__file__).with_name('ssh_contract.c')), '-o', str(binary)], check=True)
     subprocess.run([str(binary)], check=True, timeout=10)

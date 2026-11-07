@@ -115,6 +115,7 @@ python3 tests/host/run_glob.py
 python3 tests/host/run_poll.py
 python3 tests/host/run_ssh.py
 python3 tests/host/run_ssh_terminal.py
+python3 tests/host/run_offload.py
 python3 tests/test_build.py
 ```
 

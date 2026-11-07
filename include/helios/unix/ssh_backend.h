@@ -1,6 +1,7 @@
 #ifndef HELIOS_UNIX_SSH_BACKEND_H
 #define HELIOS_UNIX_SSH_BACKEND_H
 #include <helios/unix/ssh.h>
+
 /* Byte transports need not be sockets. control is optional for a native
  * engine; the supplied offload provider uses it for its private wire ABI. */
 struct hu_ssh_transport_ops {
@@ -10,7 +11,12 @@ struct hu_ssh_transport_ops {
     int (*control)(void *, int, void *, unsigned *);
     void (*close)(void *);
 };
-struct hu_ssh_transport { const struct hu_ssh_transport_ops *ops; void *context; };
+
+struct hu_ssh_transport {
+    const struct hu_ssh_transport_ops *ops;
+    void *context;
+};
+
 struct hu_ssh_backend {
     unsigned version;
     const char *name;

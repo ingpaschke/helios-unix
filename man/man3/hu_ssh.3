@@ -55,7 +55,8 @@ exit_valid indicates whether exit_status is available. Drain pending output
 even if status already reports CLOSED.
 .SS I/O and event loops
 Read and write return byte counts, or -1 with errno set. Read returns zero at
-EOF. Handle short writes and retry EAGAIN/EINTR without losing unaccepted data.
+EOF. Handle short writes and retry EAGAIN/EWOULDBLOCK/EINTR without losing
+unaccepted data. EAGAIN and EWOULDBLOCK have different values on Helios.
 The supplied terminal provider merges remote stdout and stderr.
 .PP
 interest supplies the transport descriptor, readiness events and timeout_ms

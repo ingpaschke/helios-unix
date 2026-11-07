@@ -16,18 +16,24 @@
 #define HU_SSH_PROGRESS 3
 #define HU_SSH_WAIT_READ 1
 #define HU_SSH_WAIT_WRITE 2
-struct hu_ssh_wait { int fd, events, timeout_ms; };
+
+struct hu_ssh_wait {
+    int fd, events, timeout_ms;
+};
+
 struct hu_ssh_options {
     const char *host, *user, *terminal, *command;
     unsigned port, columns, rows, timeout_ms;
     int pty;
     const void *configuration; /* provider-specific settings, normally NULL */
 };
+
 struct hu_ssh_info {
     int state, error, exit_status, exit_valid;
     unsigned auth_methods, auth_attempt;
     char key_type[64], fingerprint[96], message[320];
 };
+
 struct hu_ssh_auth {
     unsigned method;
     const char *secret; /* password or private-key passphrase */
@@ -40,8 +46,8 @@ struct hu_ssh_transport;
 /* On success the session owns the transport; on failure the caller owns it.
  * Read/write are nonblocking. Authentication and host-key decisions are
  * explicit, and must be driven using hu_ssh_status. */
-struct hu_ssh *hu_ssh_open(const struct hu_ssh_backend *,
-    const struct hu_ssh_options *, const struct hu_ssh_transport *);
+struct hu_ssh *hu_ssh_open(const struct hu_ssh_backend *, const struct hu_ssh_options *,
+                           const struct hu_ssh_transport *);
 /* Convenience adapter: takes a connected TCP fd on success only. */
 struct hu_ssh *hu_ssh_open_fd(const struct hu_ssh_options *, int fd);
 int hu_ssh_status(struct hu_ssh *, struct hu_ssh_info *);
