@@ -8,12 +8,13 @@ struct sockaddr;
 typedef unsigned int socklen_t;
 #endif
 struct addrinfo {
-    int ai_flags,ai_family,ai_socktype,ai_protocol;
+    int ai_flags, ai_family, ai_socktype, ai_protocol;
     socklen_t ai_addrlen;
     struct sockaddr *ai_addr;
     char *ai_canonname;
     struct addrinfo *ai_next;
 };
+
 #define AI_PASSIVE 1
 #define AI_CANONNAME 2
 #define AI_NUMERICHOST 4
@@ -32,8 +33,10 @@ struct addrinfo {
 #define EAI_MEMORY 8
 #define EAI_SYSTEM 9
 #define EAI_OVERFLOW 10
-int getaddrinfo(const char *,const char *,const struct addrinfo *,struct addrinfo **);
+int getaddrinfo(const char *, const char *, const struct addrinfo *,
+                struct addrinfo **);
 void freeaddrinfo(struct addrinfo *);
 const char *gai_strerror(int);
-int getnameinfo(const struct sockaddr *,socklen_t,char *,socklen_t,char *,socklen_t,int);
+int getnameinfo(const struct sockaddr *, socklen_t, char *, socklen_t, char *,
+                socklen_t, int);
 #endif

@@ -1,10 +1,15 @@
 #ifndef HELIOS_UNIX_POLL_H
 #define HELIOS_UNIX_POLL_H
+
 /* Restricted native API: sockets, native channel FIFOs and regular files.
  * Uses native readiness subscriptions rather than periodic network RPCs.
  * Other object classes
  * fail with EOPNOTSUPP until their hangup/error protocols are qualified. */
-struct hu_pollfd {int fd;short events,revents;};
+struct hu_pollfd {
+    int fd;
+    short events, revents;
+};
+
 #define HU_POLLIN 1
 #define HU_POLLOUT 2
 #define HU_POLLPRI 4
@@ -13,5 +18,5 @@ struct hu_pollfd {int fd;short events,revents;};
 #define HU_POLLNVAL 32
 /* SOL_IOCTL query implemented by the Internet socket service. */
 #define HU_SOCKET_POLL_EVENTS 0x4004687fUL
-int hu_poll(struct hu_pollfd *,unsigned,int);
+int hu_poll(struct hu_pollfd *, unsigned, int);
 #endif

@@ -9,7 +9,12 @@ int hu_set_nonblock(int fd, int enabled);
 int hu_terminal_size(int fd, unsigned *rows, unsigned *columns);
 int hu_terminal_raw(int fd, struct termios *saved);
 int hu_terminal_restore(int fd, const struct termios *saved);
+
 /* Explicit input profile. Raw reads elsewhere never translate bytes. */
-struct hu_terminal_decoder {unsigned utf8_remaining;int helios_c1;};
-int hu_terminal_read(int fd,struct hu_terminal_decoder *,char *,int);
+struct hu_terminal_decoder {
+    unsigned utf8_remaining;
+    int helios_c1;
+};
+
+int hu_terminal_read(int fd, struct hu_terminal_decoder *, char *, int);
 #endif

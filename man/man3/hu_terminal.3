@@ -57,7 +57,7 @@ two output bytes.
 .SH RETURN VALUE
 Size, raw, restore and nonblock return 0 on success, or -1 with errno set.
 hu_terminal_read returns the number of output bytes, 0 at end of input, or -1
-with errno set. EAGAIN and EINTR retain their usual read meanings.
+with errno set. EAGAIN, EWOULDBLOCK and EINTR retain their usual read meanings.
 Invalid arguments or unavailable dimensions produce EINVAL.
 .SH EXAMPLE
 This routine prints one native key sequence as hexadecimal bytes and restores

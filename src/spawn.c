@@ -4,44 +4,122 @@
 #include <errno.h>
 #include <unistd.h>
 extern char **environ;
-extern int hu_spawn_native(pid_t *,const char *,const struct hu_spawn_actions *,
-                           const struct hu_spawn_attr *,char *const[],char *const[]);
-void hu_spawn_actions_init(struct hu_spawn_actions *a){if(a)memset(a,0,sizeof(*a));}
-void hu_spawn_actions_destroy(struct hu_spawn_actions *a)
-{unsigned i;if(!a)return;for(i=0;i<a->count;i++)free(a->items[i].path);memset(a,0,sizeof(*a));}
-static int action(struct hu_spawn_actions *a,int kind,int source,int fd,const char *path,int flags)
+extern int hu_spawn_native(pid_t *, const char *, const struct hu_spawn_actions *,
+                           const struct hu_spawn_attr *, char *const[], char *const[]);
+
+void hu_spawn_actions_init(struct hu_spawn_actions *actions)
 {
-    struct hu_spawn_action *p;
-    if(!a||a->count>=HU_SPAWN_ACTIONS_MAX||fd<0||fd>=4096||source<0||source>=4096)return EINVAL;
-    p=&a->items[a->count];memset(p,0,sizeof(*p));
-    if(path){p->path=malloc(strlen(path)+1);if(!p->path)return ENOMEM;strcpy(p->path,path);}
-    p->kind=kind;p->source=source;p->fd=fd;p->flags=flags;a->count++;return 0;
+    if (actions) {
+        memset(actions, 0, sizeof(*actions));
+    }
 }
-int hu_spawn_addclose(struct hu_spawn_actions *a,int fd){return action(a,0,0,fd,NULL,0);}
-int hu_spawn_adddup2(struct hu_spawn_actions *a,int src,int dst){return action(a,1,src,dst,NULL,0);}
-int hu_spawn_addopen(struct hu_spawn_actions *a,int fd,const char *p,int flags)
-{if(!p)return EINVAL;return action(a,2,0,fd,p,flags);}
-int hu_spawn(pid_t *pid,const char *name,const struct hu_spawn_actions *a,
-              const struct hu_spawn_attr *attr,char *const argv[],char *const env[])
+
+void hu_spawn_actions_destroy(struct hu_spawn_actions *actions)
 {
-    if(!pid||!name||!*name||!argv||!argv[0])return EINVAL;
-    return hu_spawn_native(pid,name,a,attr,argv,env?env:environ);
+    unsigned i;
+    if (!actions) {
+        return;
+    }
+    for (i = 0; i < actions->count; i++) {
+        free(actions->items[i].path);
+    }
+    memset(actions, 0, sizeof(*actions));
 }
-int hu_spawnp(pid_t *pid,const char *name,const struct hu_spawn_actions *a,
-              const struct hu_spawn_attr *attr,char *const argv[],char *const env[])
+
+static int action(struct hu_spawn_actions *actions, int kind, int source, int fd,
+                  const char *path, int flags)
 {
-    const char *path,*end;char candidate[1024];size_t n;int e,denied=0;
-    if(!name||!*name)return EINVAL;
-    if(strchr(name,'/'))return hu_spawn(pid,name,a,attr,argv,env);
-    path=getenv("PATH");if(!path)path="/helios/local/bin:/helios/bin:/helios/bin/x11";
+    struct hu_spawn_action *entry;
+    if (!actions || actions->count >= HU_SPAWN_ACTIONS_MAX || fd < 0 || fd >= 4096 ||
+        source < 0 || source >= 4096) {
+        return EINVAL;
+    }
+    entry = &actions->items[actions->count];
+    memset(entry, 0, sizeof(*entry));
+    if (path) {
+        entry->path = malloc(strlen(path) + 1);
+        if (!entry->path) {
+            return ENOMEM;
+        }
+        strcpy(entry->path, path);
+    }
+    entry->kind = kind;
+    entry->source = source;
+    entry->fd = fd;
+    entry->flags = flags;
+    actions->count++;
+    return 0;
+}
+
+int hu_spawn_addclose(struct hu_spawn_actions *actions, int fd)
+{
+    return action(actions, 0, 0, fd, NULL, 0);
+}
+
+int hu_spawn_adddup2(struct hu_spawn_actions *actions, int source, int destination)
+{
+    return action(actions, 1, source, destination, NULL, 0);
+}
+
+int hu_spawn_addopen(struct hu_spawn_actions *actions, int fd, const char *path,
+                     int flags)
+{
+    if (!path) {
+        return EINVAL;
+    }
+    return action(actions, 2, 0, fd, path, flags);
+}
+
+int hu_spawn(pid_t *pid, const char *name, const struct hu_spawn_actions *actions,
+             const struct hu_spawn_attr *attr, char *const argv[], char *const env[])
+{
+    if (!pid || !name || !*name || !argv || !argv[0]) {
+        return EINVAL;
+    }
+    return hu_spawn_native(pid, name, actions, attr, argv, env ? env : environ);
+}
+
+int hu_spawnp(pid_t *pid, const char *name, const struct hu_spawn_actions *actions,
+              const struct hu_spawn_attr *attr, char *const argv[], char *const env[])
+{
+    const char *path, *end;
+    char candidate[1024];
+    size_t length;
+    int error, access_denied = 0;
+    if (!name || !*name) {
+        return EINVAL;
+    }
+    if (strchr(name, '/')) {
+        return hu_spawn(pid, name, actions, attr, argv, env);
+    }
+    path = getenv("PATH");
+    if (!path) {
+        path = "/helios/local/bin:/helios/bin:/helios/bin/x11";
+    }
     do {
-        end=strchr(path,':');if(!end)end=path+strlen(path);n=end-path;
-        if(n+strlen(name)+2>=sizeof(candidate))return ENAMETOOLONG;
-        memcpy(candidate,path,n);if(n)candidate[n++]='/';strcpy(candidate+n,name);
-        e=hu_spawn(pid,candidate,a,attr,argv,env);
-        if(!e)return 0;if(e==EACCES)denied=1;
-        else if(e!=ENOENT&&e!=ENOTDIR)return e;
-        path=*end?end+1:NULL;
-    }while(path);
-    return denied?EACCES:ENOENT;
+        end = strchr(path, ':');
+        if (!end) {
+            end = path + strlen(path);
+        }
+        length = end - path;
+        if (length + strlen(name) + 2 >= sizeof(candidate)) {
+            return ENAMETOOLONG;
+        }
+        memcpy(candidate, path, length);
+        if (length) {
+            candidate[length++] = '/';
+        }
+        strcpy(candidate + length, name);
+        error = hu_spawn(pid, candidate, actions, attr, argv, env);
+        if (!error) {
+            return 0;
+        }
+        if (error == EACCES) {
+            access_denied = 1;
+        } else if (error != ENOENT && error != ENOTDIR) {
+            return error;
+        }
+        path = *end ? end + 1 : NULL;
+    } while (path);
+    return access_denied ? EACCES : ENOENT;
 }
